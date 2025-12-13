@@ -61,7 +61,9 @@ class ASRCNN_BiLSTM(nn.Module):
         self.fc = nn.Linear(hidden_size * 2, vocab_size)
         self.log_softmax = nn.LogSoftmax(dim=2)
 
-    def forward(self, x: torch.Tensor, input_lengths: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(
+        self, x: torch.Tensor, input_lengths: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         x = x.unsqueeze(1)
 
         x = self.relu(self.bn1(self.conv1(x)))
@@ -78,15 +80,15 @@ class ASRCNN_BiLSTM(nn.Module):
 
         output_lengths = (input_lengths / (2**2)).long()
 
-        x = nn.utils.rnn.pack_padded_sequence(
+        packed = nn.utils.rnn.pack_padded_sequence(
             x,
             output_lengths.cpu(),
             batch_first=True,
             enforce_sorted=False,
         )
 
-        x, _ = self.lstm(x)
-        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+        packed_out, _ = self.lstm(packed)
+        x, _ = nn.utils.rnn.pad_packed_sequence(packed_out, batch_first=True)
 
         x = self.fc(x)
         log_probs = self.log_softmax(x)
@@ -148,13 +150,19 @@ class AsrTranscriber:
         )
         mel_db = librosa.power_to_db(mel, ref=np.max)
 
-        mel_tensor = torch.tensor(mel_db, dtype=torch.float32).unsqueeze(0).to(self.device)
-        mel_length = torch.tensor([mel_tensor.size(2)], dtype=torch.long).to(self.device)
+        mel_tensor = (
+            torch.tensor(mel_db, dtype=torch.float32).unsqueeze(0).to(self.device)
+        )
+        mel_length = torch.tensor([mel_tensor.size(2)], dtype=torch.long).to(
+            self.device
+        )
 
         with torch.no_grad():
             log_probs, _ = self.model(mel_tensor, mel_length)
 
-        text, confidence = self._decode_greedy(log_probs[0], self.idx_to_char, blank_idx=0)
+        text, confidence = self._decode_greedy(
+            log_probs[0], self.idx_to_char, blank_idx=0
+        )
         return text, confidence
 
 
@@ -179,14 +187,18 @@ def _coerce_idx_to_char(mapping: dict[Any, Any]) -> dict[int, str]:
     return out
 
 
-def load_transcriber(checkpoint_path: str | Path, device: torch.device | None = None) -> AsrTranscriber:
+def load_transcriber(
+    checkpoint_path: str | Path, device: torch.device | None = None
+) -> AsrTranscriber:
     device = device or torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     checkpoint_path = Path(checkpoint_path)
     checkpoint = torch.load(str(checkpoint_path), map_location=device)
 
     if not isinstance(checkpoint, dict) or "model_state_dict" not in checkpoint:
-        raise ValueError("Checkpoint no tiene formato esperado (falta 'model_state_dict')")
+        raise ValueError(
+            "Checkpoint no tiene formato esperado (falta 'model_state_dict')"
+        )
 
     config = _parse_model_config(checkpoint["model_config"])  # type: ignore[arg-type]
     idx_to_char = _coerce_idx_to_char(checkpoint["idx_to_char"])  # type: ignore[arg-type]
@@ -202,4 +214,6 @@ def load_transcriber(checkpoint_path: str | Path, device: torch.device | None = 
     model.load_state_dict(checkpoint["model_state_dict"])  # type: ignore[arg-type]
     model.eval()
 
-    return AsrTranscriber(model=model, idx_to_char=idx_to_char, config=config, device=device)
+    return AsrTranscriber(
+        model=model, idx_to_char=idx_to_char, config=config, device=device
+    )

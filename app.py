@@ -7,6 +7,7 @@ from tkinter import Tk, filedialog
 import tkinter as tk
 
 from asr_model import AsrTranscriber, load_transcriber
+from audio_player import AudioPlayer
 
 
 @dataclass(frozen=True)
@@ -61,11 +62,14 @@ class App:
         self.transcriber: AsrTranscriber | None = None
         self.selected_audio_path: Path | None = None
 
+        self.player = AudioPlayer()
+
         self._build_ui()
         self._start_model_load()
+        self._start_player_poll()
 
     def _build_ui(self) -> None:
-        self.root.title("ASR (ES) - Minimal")
+        self.root.title("ASR (ES)")
         self.root.configure(bg=self.theme.bg)
         self.root.minsize(760, 480)
 
@@ -128,6 +132,24 @@ class App:
         )
         self.btn_copy.pack(side=tk.LEFT, padx=(10, 0))
 
+        self.btn_play_pause = OutlineButton(
+            actions,
+            self.theme,
+            text="Reproducir",
+            command=self._on_play_pause,
+            state=tk.DISABLED,
+        )
+        self.btn_play_pause.pack(side=tk.LEFT, padx=(10, 0))
+
+        self.btn_reset_audio = OutlineButton(
+            actions,
+            self.theme,
+            text="Reiniciar",
+            command=self._on_reset_audio,
+            state=tk.DISABLED,
+        )
+        self.btn_reset_audio.pack(side=tk.LEFT, padx=(10, 0))
+
         self.file_label = tk.Label(
             container,
             text="Archivo: (ninguno)",
@@ -179,6 +201,8 @@ class App:
         self.btn_select.configure(state=tk.DISABLED)
         self.btn_transcribe.configure(state=tk.DISABLED)
         self.btn_copy.configure(state=tk.DISABLED)
+        self.btn_play_pause.configure(state=tk.DISABLED)
+        self.btn_reset_audio.configure(state=tk.DISABLED)
 
         def load_worker():
             try:
@@ -211,6 +235,16 @@ class App:
         self.file_label.configure(text=f"Archivo: {path.name}")
         self._set_text("")
         self.status_var.set("Listo para transcribir.")
+
+        try:
+            self.player.load(path)
+            self._update_player_buttons()
+            self.btn_play_pause.configure(state=tk.NORMAL)
+            self.btn_reset_audio.configure(state=tk.NORMAL)
+        except Exception as exc:
+            self.status_var.set(f"Error reproduciendo audio: {exc}")
+            self.btn_play_pause.configure(state=tk.DISABLED)
+            self.btn_reset_audio.configure(state=tk.DISABLED)
 
         if self.transcriber is not None:
             self.btn_transcribe.configure(state=tk.NORMAL)
@@ -256,6 +290,48 @@ class App:
         self.status_var.set(f"Error transcribiendo: {message}")
         self.btn_select.configure(state=tk.NORMAL)
         self.btn_transcribe.configure(state=tk.NORMAL)
+
+    def _start_player_poll(self) -> None:
+        def poll():
+            finished = False
+            try:
+                finished = self.player.poll_finished()
+            except Exception:
+                finished = False
+
+            if finished:
+                self._update_player_buttons()
+
+            self.root.after(200, poll)
+
+        self.root.after(200, poll)
+
+    def _update_player_buttons(self) -> None:
+        state = self.player.state
+        if state == "playing":
+            self.btn_play_pause.configure(text="Pausar")
+        else:
+            self.btn_play_pause.configure(text="Reproducir")
+
+    def _on_play_pause(self) -> None:
+        if self.selected_audio_path is None:
+            return
+
+        try:
+            self.player.toggle_play_pause()
+            self._update_player_buttons()
+        except Exception as exc:
+            self.status_var.set(f"Error reproduciendo audio: {exc}")
+
+    def _on_reset_audio(self) -> None:
+        if self.selected_audio_path is None:
+            return
+
+        try:
+            self.player.reset()
+            self._update_player_buttons()
+        except Exception as exc:
+            self.status_var.set(f"Error reproduciendo audio: {exc}")
 
     def _on_copy(self) -> None:
         text = self.text.get("1.0", tk.END).strip()
