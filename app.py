@@ -11,23 +11,27 @@ from asr_model import AsrTranscriber, load_transcriber
 
 @dataclass(frozen=True)
 class Theme:
-    bg: str = "#ffffff"
-    fg: str = "#0a0a0a"
-    muted: str = "#737373"
-    border: str = "#e5e5e5"
-    hover: str = "#f5f5f5"
+    # Dark mode inspired by shadcn/ui
+    bg: str = "#0a0a0a"  # zinc-950
+    fg: str = "#fafafa"  # zinc-50
+    muted: str = "#a3a3a3"  # zinc-400
+    border: str = "#262626"  # zinc-800
+    hover: str = "#171717"  # zinc-900
+    btn_bg: str = "#0a0a0a"
+    btn_fg: str = "#fafafa"
+    btn_hover: str = "#262626"
 
 
 class OutlineButton(tk.Button):
     def __init__(self, master: tk.Misc, theme: Theme, **kwargs):
         super().__init__(
             master,
-            bg=theme.bg,
-            fg=theme.fg,
-            activebackground=theme.hover,
-            activeforeground=theme.fg,
+            bg=theme.btn_bg,
+            fg=theme.btn_fg,
+            activebackground=theme.btn_hover,
+            activeforeground=theme.btn_fg,
             relief="flat",
-            bd=1,
+            bd=0,
             highlightthickness=1,
             highlightbackground=theme.border,
             highlightcolor=theme.border,
@@ -42,10 +46,10 @@ class OutlineButton(tk.Button):
 
     def _on_enter(self, _event):
         if self["state"] != tk.DISABLED:
-            self.configure(bg=self._theme.hover)
+            self.configure(bg=self._theme.btn_hover)
 
     def _on_leave(self, _event):
-        self.configure(bg=self._theme.bg)
+        self.configure(bg=self._theme.btn_bg)
 
 
 class App:
@@ -79,7 +83,7 @@ class App:
             bg=self.theme.bg,
             fg=self.theme.fg,
             font=("Segoe UI", 18, "bold"),
-            anchor="w",
+            anchor="center",
         )
         header.pack(fill=tk.X)
 
@@ -88,15 +92,18 @@ class App:
             text="Sube un archivo .wav y obtén la transcripción.",
             bg=self.theme.bg,
             fg=self.theme.muted,
-            anchor="w",
+            anchor="center",
         )
         subtitle.pack(fill=tk.X, pady=(6, 18))
 
         action_row = tk.Frame(container, bg=self.theme.bg)
         action_row.pack(fill=tk.X)
 
+        actions = tk.Frame(action_row, bg=self.theme.bg)
+        actions.pack()
+
         self.btn_select = OutlineButton(
-            action_row,
+            actions,
             self.theme,
             text="Seleccionar WAV",
             command=self._on_select_audio,
@@ -104,7 +111,7 @@ class App:
         self.btn_select.pack(side=tk.LEFT)
 
         self.btn_transcribe = OutlineButton(
-            action_row,
+            actions,
             self.theme,
             text="Transcribir",
             command=self._on_transcribe,
@@ -113,20 +120,20 @@ class App:
         self.btn_transcribe.pack(side=tk.LEFT, padx=(10, 0))
 
         self.btn_copy = OutlineButton(
-            action_row,
+            actions,
             self.theme,
             text="Copiar",
             command=self._on_copy,
             state=tk.DISABLED,
         )
-        self.btn_copy.pack(side=tk.RIGHT)
+        self.btn_copy.pack(side=tk.LEFT, padx=(10, 0))
 
         self.file_label = tk.Label(
             container,
             text="Archivo: (ninguno)",
             bg=self.theme.bg,
             fg=self.theme.muted,
-            anchor="w",
+            anchor="center",
         )
         self.file_label.pack(fill=tk.X, pady=(14, 10))
 
@@ -136,12 +143,17 @@ class App:
             textvariable=self.status_var,
             bg=self.theme.bg,
             fg=self.theme.muted,
-            anchor="w",
+            anchor="center",
         )
         status.pack(fill=tk.X)
 
         # Text area
-        text_frame = tk.Frame(container, bg=self.theme.bg, highlightthickness=1, highlightbackground=self.theme.border)
+        text_frame = tk.Frame(
+            container,
+            bg=self.theme.bg,
+            highlightthickness=1,
+            highlightbackground=self.theme.border,
+        )
         text_frame.pack(fill=tk.BOTH, expand=True, pady=(14, 0))
 
         self.text = tk.Text(
