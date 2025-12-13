@@ -1,5 +1,7 @@
 # ASR Tkinter GUI
 
+Proyecto académico para la materia **Inteligencia Artificial** en **ESPOL**.
+
 Interfaz gráfica minimalista (blanco/negro) para transcribir audio **.wav** usando el checkpoint `best_model.pth`.
 
 ## Requisitos
