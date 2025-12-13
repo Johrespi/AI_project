@@ -1,0 +1,2516 @@
+Te voy a pasar el codigo completo y me dices si esta bien el diagrama:
+
+
+
+# Verificar disponibilidad de GPU
+
+import torch
+
+import sys
+
+
+
+print("=" * 60)
+
+print("CONFIGURACIÓN DEL SISTEMA")
+
+print("=" * 60)
+
+print(f"Python version: {sys.version}")
+
+print(f"PyTorch version: {torch.__version__}")
+
+print(f"CUDA disponible: {torch.cuda.is_available()}")
+
+
+
+if torch.cuda.is_available():
+
+    print(f"GPU: {torch.cuda.get_device_name(0)}")
+
+    print(f"Memoria GPU Total: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
+
+    print(f"Memoria GPU Disponible: {torch.cuda.memory_allocated(0) / 1e9:.2f} GB")
+
+else:
+
+    print("⚠️ GPU no disponible. Se usará CPU (el entrenamiento será más lento)")
+
+
+
+print("=" * 60)
+
+
+
+# Instalación compatible con NumPy 2.x (versión de Colab Nov 2025)
+print("🔄 Instalando paquetes adicionales...")
+print("=" * 60)
+
+print("\n📦 Actualizando transformers y librosa a versiones compatibles con NumPy 2.x...")
+# Actualizar transformers y accelerate a versiones compatibles
+!pip install -q --upgrade transformers accelerate
+
+# Actualizar librosa a la última versión que soporta NumPy 2.x
+!pip install -q --upgrade librosa
+
+print("\n📦 Instalando librerías adicionales...")
+# Instalar paquetes adicionales
+!pip install -q soundfile jiwer beautifulsoup4
+
+print("\n✅ Instalación completada")
+print("\n💡 Versiones instaladas/actualizadas:")
+print("   - transformers: actualizado (compatible con NumPy 2.x)")
+print("   - accelerate: actualizado (compatible con transformers)")
+print("   - librosa: actualizado (compatible con NumPy 2.x)")
+print("   - soundfile: instalado")
+print("   - jiwer: instalado")
+print("   - beautifulsoup4: instalado")
+
+print("\n💡 Usando las versiones PRE-INSTALADAS de Colab para:")
+print("   - numpy 2.0.2 (versión por defecto)")
+print("   - torch (ya instalado)")
+print("   - pandas (ya instalado)")
+print("   - scikit-learn (ya instalado)")
+print("   - matplotlib, seaborn (ya instalados)")
+print("   - datasets (ya instalado)")
+print("   - kaggle (ya instalado)")
+
+print("\n⏱️  SIGUIENTE PASO:")
+print("   Ejecuta la siguiente celda de importaciones directamente")
+print("   (NO es necesario reiniciar el runtime)")
+print("=" * 60)
+
+# Instalar librería para Data Augmentation
+print("📦 Instalando nlpaug para Data Augmentation...")
+!pip install -q nlpaug
+
+print("✅ nlpaug instalado correctamente")
+print("💡 Esta librería permite crear variaciones de textos para aumentar el dataset")
+
+# Librerías estándar
+import os
+import json
+import random
+import numpy as np
+import pandas as pd
+from pathlib import Path
+from typing import Dict, List, Tuple, Optional
+import warnings
+warnings.filterwarnings('ignore')
+
+# PyTorch
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils.rnn import pad_sequence
+
+# Audio processing
+import librosa
+import soundfile as sf
+
+# Métricas y visualización
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import classification_report, confusion_matrix
+from jiwer import wer, cer
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tqdm.auto import tqdm
+
+# Configurar semillas para reproducibilidad
+RANDOM_SEED = 42
+
+def set_seed(seed=RANDOM_SEED):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+set_seed(RANDOM_SEED)
+
+# Configurar device
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+print("="*60)
+print("✅ LIBRERÍAS IMPORTADAS CORRECTAMENTE")
+print("="*60)
+print(f"🔧 Device: {device}")
+print(f"🎲 Random Seed: {RANDOM_SEED}")
+print("="*60)
+
+# Configuración de la API de Kaggle usando carga de archivo
+import os
+import ipywidgets as widgets
+from IPython.display import display
+
+# Widget para cargar el archivo kaggle.json
+def cargar_kaggle_json():
+    uploader = widgets.FileUpload(
+        accept='.json',
+        multiple=False,
+        description='Sube tu kaggle.json'
+    )
+    display(uploader)
+
+    def on_upload_change(change):
+        for filename, fileinfo in uploader.value.items():
+            os.makedirs('/root/.kaggle', exist_ok=True)
+            with open('/root/.kaggle/kaggle.json', 'wb') as f:
+                f.write(fileinfo['content'])
+            print(f"Archivo {filename} guardado en /root/.kaggle/kaggle.json")
+        uploader.value.clear()
+        uploader._counter = 0
+        uploader.close()
+
+    uploader.observe(on_upload_change, names='value')
+
+cargar_kaggle_json()
+
+# Verifica que el archivo se haya guardado correctamente
+if os.path.exists('/root/.kaggle/kaggle.json'):
+    print('kaggle.json cargado correctamente.')
+else:
+    print('No se encontró kaggle.json en /root/.kaggle/')
+
+import os
+import kagglehub
+
+print("="*60)
+print("📥 DESCARGANDO DATASET DE AUDIO EN ESPAÑOL")
+print("="*60)
+
+# Dataset: Spanish Dataset for TTS
+dataset_name = "carlfm01/120h-spanish-speech"
+
+print(f"\n🔄 Descargando dataset de audio...")
+print(f"   Dataset: {dataset_name}")
+print(f"   Método: kagglehub")
+
+try:
+    # Descargar usando kagglehub (método más moderno y confiable)
+    audio_dataset_path = kagglehub.dataset_download(dataset_name)
+
+    print(f"\n✅ Dataset descargado exitosamente!")
+    print(f"   Ruta: {audio_dataset_path}")
+
+    # Explorar la estructura del directorio
+    print(f"\n📁 Estructura del directorio:")
+    file_count = 0
+    audio_files = []
+    csv_files = []
+
+    for root, dirs, files in os.walk(audio_dataset_path):
+        level = root.replace(audio_dataset_path, '').count(os.sep)
+        indent = ' ' * 2 * level
+        folder_name = os.path.basename(root) if os.path.basename(root) else "root"
+        print(f"{indent}{folder_name}/")
+        subindent = ' ' * 2 * (level + 1)
+
+        for file in files:
+            file_count += 1
+            full_path = os.path.join(root, file)
+
+            if file.endswith(('.wav', '.mp3', '.flac', '.ogg')):
+                audio_files.append(full_path)
+            elif file.endswith('.csv'):
+                csv_files.append(full_path)
+
+            if file_count <= 15:  # Mostrar primeros 15 archivos
+                print(f"{subindent}{file}")
+
+        if file_count > 15 and files:
+            print(f"{subindent}... y {len(files) - 15} archivos más en esta carpeta")
+
+    print(f"\n📊 Resumen del dataset:")
+    print(f"   - Total de archivos: {file_count}")
+    print(f"   - Archivos de audio: {len(audio_files)}")
+    print(f"   - Archivos CSV: {len(csv_files)}")
+
+    if csv_files:
+        print(f"\n📄 Archivos CSV encontrados:")
+        for csv_file in csv_files:
+            print(f"   - {csv_file}")
+
+    if audio_files:
+        print(f"\n🎵 Ejemplos de archivos de audio:")
+        for audio_file in audio_files[:5]:
+            print(f"   - {os.path.basename(audio_file)}")
+
+    print("\n" + "="*60)
+    print("✅ DESCARGA DE AUDIO COMPLETADA")
+    print("="*60)
+
+except Exception as e:
+    print(f"\n❌ Error al descargar el dataset: {str(e)}")
+    print("\n💡 Verifica que:")
+    print("   1. Tengas configurado kaggle.json correctamente")
+    print("   2. Tengas acceso al dataset en Kaggle")
+    print("   3. Tu conexión a internet esté activa")
+    print("="*60)
+
+# Extracción y verificación SOLO para el dataset de 120h
+import os
+import pandas as pd
+
+print("="*60)
+print("📦 EXTRAYENDO DATASET 120h")
+print("="*60)
+
+# Usar la ruta del dataset descargado con Kaggle API
+if 'audio_dataset_path' in locals() and audio_dataset_path:
+    DATASET_120H_PATH = audio_dataset_path
+    print(f"✅ Usando dataset descargado en: {DATASET_120H_PATH}")
+else:
+    print("❌ Error: La variable 'audio_dataset_path' no está definida.")
+    print("   Por favor, ejecuta primero la celda de descarga del dataset con Kaggle API.")
+    raise NameError("audio_dataset_path no está definido. Ejecuta la celda de descarga del dataset primero.")
+
+# Buscar el CSV 'files.csv' en el directorio del dataset
+print(f"\n🔍 Buscando archivos CSV...")
+csv_files = []
+for root, dirs, files in os.walk(DATASET_120H_PATH):
+    for file in files:
+        if file == 'files.csv':
+            csv_path = os.path.join(root, file)
+            csv_files.append(csv_path)
+            print(f"   📄 Encontrado: {csv_path}")
+
+# Usar el primer files.csv encontrado
+if csv_files:
+    csv_120h = csv_files[0]
+    csv_dir = os.path.dirname(csv_120h)
+    print(f"\n✅ Usando CSV: {csv_120h}")
+    print(f"   Directorio base: {csv_dir}")
+else:
+    print("❌ No se encontró files.csv")
+    csv_120h = None
+
+if csv_120h:
+    try:
+        # Leer el CSV
+        df_120h = pd.read_csv(csv_120h)
+        print(f"\n✅ CSV cargado: {len(df_120h)} muestras")
+        print(f"   Columnas disponibles: {list(df_120h.columns)}")
+
+        # Detectar columnas
+        audio_col = None
+        text_col = None
+
+        for col in df_120h.columns:
+            col_lower = col.lower()
+            if 'filename' in col_lower and 'wav' in col_lower:
+                audio_col = col
+            if 'text' in col_lower or 'transcript' in col_lower:
+                text_col = col
+
+        if not audio_col or not text_col:
+            # Usar primeras 2 columnas como fallback
+            if len(df_120h.columns) >= 2:
+                # Buscar la columna que parece contener rutas de archivos
+                for col in df_120h.columns:
+                    if df_120h[col].dtype == 'object' and df_120h[col].str.contains('.wav', na=False).any():
+                        audio_col = col
+                        break
+                # Buscar la columna que parece contener texto
+                for col in df_120h.columns:
+                    if col != audio_col and df_120h[col].dtype == 'object':
+                        text_col = col
+                        break
+
+        print(f"\n   ✅ Columna de audio: {audio_col}")
+        print(f"   ✅ Columna de texto: {text_col}")
+
+        if audio_col and text_col:
+            # Crear índice de archivos de audio (O(n) en lugar de O(n*m))
+            print(f"\n🗂️ Creando índice de archivos de audio...")
+            audio_index = {}
+            audio_count = 0
+
+            for root, dirs, files in os.walk(csv_dir):
+                for file in files:
+                    if file.endswith('.wav'):
+                        audio_index[file] = os.path.join(root, file)
+                        audio_count += 1
+                        if audio_count % 50000 == 0:
+                            print(f"   Indexados: {audio_count} archivos...")
+
+            print(f"   ✅ Índice creado: {len(audio_index)} archivos de audio")
+
+            # Procesar el DataFrame usando el índice (O(n))
+            print(f"\n🔍 Verificando archivos de audio...")
+            valid_rows = []
+            missing = 0
+
+            for i, row in df_120h.iterrows():
+                audio_filename = str(row[audio_col])
+                text = row[text_col]
+
+                # Extraer solo el nombre del archivo si tiene ruta
+                base_filename = os.path.basename(audio_filename)
+
+                # Buscar en el índice (O(1))
+                if base_filename in audio_index:
+                    valid_rows.append({
+                        'file_name': base_filename,
+                        'audio_path': audio_index[base_filename],
+                        'text': text,
+                        'audio_exists': True
+                    })
+                else:
+                    missing += 1
+
+                # Mostrar progreso
+                if (i + 1) % 20000 == 0:
+                    print(f"   Procesados: {i+1}/{len(df_120h)} ({len(valid_rows)} válidos, {missing} faltantes)")
+
+            df_120h = pd.DataFrame(valid_rows)
+            print(f"\n   ✅ Archivos válidos: {len(df_120h)}")
+            print(f"   ⚠️ Archivos faltantes: {missing}")
+
+        else:
+            print("❌ No se pudieron identificar las columnas de audio y texto")
+            df_120h = pd.DataFrame()
+
+    except Exception as e:
+        print(f"❌ Error cargando CSV: {e}")
+        import traceback
+        traceback.print_exc()
+        df_120h = pd.DataFrame()
+else:
+    print("❌ No se encontró files.csv")
+    df_120h = pd.DataFrame()
+
+# Normalizar texto y finalizar
+if len(df_120h) > 0:
+    def normalize_text(text):
+        if pd.isna(text) or text == '':
+            return ''
+        return str(text).lower().strip()
+
+    print(f"\n📝 Normalizando texto...")
+    df_120h['normalized_text'] = df_120h['text'].apply(normalize_text)
+    df_120h['transcription'] = df_120h['text']
+    df_120h['source'] = '120h'
+
+    # Filtrar textos vacíos
+    df_120h = df_120h[df_120h['normalized_text'].str.len() > 0].reset_index(drop=True)
+
+    print(f"\n✅ Dataset 120h preparado: {len(df_120h)} muestras válidas")
+    print(f"\n📋 Primeras muestras:")
+    for idx in range(min(3, len(df_120h))):
+        print(f"   {idx+1}. Audio: {os.path.basename(df_120h.iloc[idx]['audio_path'])}")
+        print(f"      Texto: {df_120h.iloc[idx]['text'][:80]}...")
+else:
+    print("❌ No se pudo cargar el dataset 120h")
+
+# Usar solo el dataset de 120h para el pipeline
+df_combined = df_120h.copy()
+
+print("="*60)
+
+
+print("="*60)
+print("📊 VERIFICANDO DATASET 120h")
+print("="*60)
+
+# Solo usar el dataset de 120h (ya preparado en la celda anterior)
+if 'df_120h' in locals() and len(df_120h) > 0:
+    df_combined = df_120h.copy()
+    print(f"✅ Dataset 120h: {len(df_combined)} muestras")
+
+    # Verificar archivos de audio existen
+    print(f"\n🔍 Verificando archivos de audio...")
+    missing_files = 0
+    for idx, row in df_combined.iterrows():
+        if not os.path.exists(row['audio_path']):
+            missing_files += 1
+
+    print(f"   Archivos existentes: {len(df_combined) - missing_files}")
+    print(f"   Archivos faltantes: {missing_files}")
+
+    if missing_files > 0:
+        print(f"   ⚠️ Filtrando archivos faltantes...")
+        df_combined = df_combined[df_combined['audio_path'].apply(os.path.exists)]
+        print(f"   Dataset final: {len(df_combined)} muestras")
+
+    # Estadísticas de longitud de transcripciones
+    df_combined['text_length'] = df_combined['transcription'].str.len()
+    print(f"\n📏 Longitud de transcripciones:")
+    print(f"   Min: {df_combined['text_length'].min()} caracteres")
+    print(f"   Max: {df_combined['text_length'].max()} caracteres")
+    print(f"   Promedio: {df_combined['text_length'].mean():.1f} caracteres")
+    print(f"   Mediana: {df_combined['text_length'].median():.1f} caracteres")
+
+    print(f"\n📋 Ejemplos de transcripciones:")
+    for idx in range(min(5, len(df_combined))):
+        print(f"{idx+1}. {df_combined.iloc[idx]['transcription'][:100]}...")
+
+else:
+    print("⚠️ No se encontraron datos en el dataset 120h")
+    df_combined = pd.DataFrame()
+
+print("="*60)
+
+
+
+
+import re
+import json
+import unicodedata
+
+def normalize_text(text):
+    """
+    Normaliza el texto para el modelo ASR:
+    - Convierte a minúsculas
+    - Mantiene solo letras, espacios y caracteres especiales del español
+    - Elimina puntuación y números
+    """
+    text = text.lower().strip()
+
+    # Eliminar puntuación pero mantener espacios y letras con acentos
+    # Mantener: a-z, á, é, í, ó, ú, ñ, ü, espacios
+    text = re.sub(r'[^a-záéíóúñü ]', ' ', text)
+
+    # Normalizar espacios múltiples
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    return text
+
+print("="*60)
+print("🔤 CREANDO VOCABULARIO")
+print("="*60)
+
+if 'df_combined' in locals() and len(df_combined) > 0:
+    # Normalizar todas las transcripciones
+    print(f"\n📝 Normalizando {len(df_combined)} transcripciones...")
+    df_combined['normalized_text'] = df_combined['transcription'].apply(normalize_text)
+
+    # Filtrar textos vacíos después de normalizar
+    df_combined = df_combined[df_combined['normalized_text'].str.len() > 0]
+    print(f"   Transcripciones válidas: {len(df_combined)}")
+
+    # Extraer todos los caracteres únicos
+    all_chars = set()
+    for text in df_combined['normalized_text']:
+        all_chars.update(text)
+
+    # Ordenar caracteres (espacio primero, luego alfabético)
+    chars_list = sorted(list(all_chars))
+    if ' ' in chars_list:
+        chars_list.remove(' ')
+        chars_list = [' '] + chars_list  # Espacio al inicio
+
+    print(f"\n✅ Caracteres únicos encontrados: {len(chars_list)}")
+    print(f"   Caracteres: {''.join(chars_list[:30])}{'...' if len(chars_list) > 30 else ''}")
+
+    # Crear vocabulario
+    # Índice 0 reservado para <blank> (CTC)
+    vocab = {'<blank>': 0}
+    for idx, char in enumerate(chars_list, start=1):
+        vocab[char] = idx
+
+    # Crear mapeo inverso (índice -> carácter)
+    idx_to_char = {idx: char for char, idx in vocab.items()}
+
+    print(f"\n📊 Vocabulario creado:")
+    print(f"   Tamaño del vocabulario: {len(vocab)}")
+    print(f"   Índices: 0 (<blank>) a {len(vocab)-1}")
+
+    # Mostrar primeros 20 caracteres del vocabulario
+    print(f"\n📋 Primeros caracteres del vocabulario:")
+    for char, idx in list(vocab.items())[:20]:
+        char_display = char if char != ' ' else '<space>'
+        print(f"      '{char_display}' -> {idx}")
+
+    if len(vocab) > 20:
+        print(f"      ... y {len(vocab) - 20} más")
+
+    # Ejemplos de texto normalizado
+    print(f"\n📝 Ejemplos de textos normalizados:")
+    for idx in range(min(3, len(df_combined))):
+        original = df_combined.iloc[idx]['transcription'][:80]
+        normalized = df_combined.iloc[idx]['normalized_text'][:80]
+        print(f"   {idx+1}. Original: {original}")
+        print(f"      Normalizado: {normalized}\n")
+
+    # Guardar vocabulario para uso posterior
+    vocab_info = {
+        'vocab': vocab,
+        'idx_to_char': idx_to_char,
+        'vocab_size': len(vocab)
+    }
+
+    print(f"✅ Vocabulario listo para usar")
+
+else:
+    print("⚠️ No hay datos disponibles para crear vocabulario")
+    vocab = {}
+    idx_to_char = {}
+
+print("="*60)
+
+
+import librosa
+import numpy as np
+
+# Configuración de audio
+SAMPLE_RATE = 16000  # Hz
+N_MELS = 80          # Número de bandas de Mel
+N_FFT = 400          # Tamaño de FFT (25ms a 16kHz)
+HOP_LENGTH = 160     # Salto entre ventanas (10ms a 16kHz)
+WIN_LENGTH = 400     # Longitud de ventana (25ms)
+
+def load_audio(audio_path, sr=SAMPLE_RATE):
+    """
+    Carga un archivo de audio y lo resamplea a la tasa deseada.
+    """
+    try:
+        audio, _ = librosa.load(audio_path, sr=sr, mono=True)
+        return audio
+    except Exception as e:
+        print(f"Error cargando {audio_path}: {e}")
+        return None
+
+def audio_to_mel_spectrogram(audio, sr=SAMPLE_RATE, n_mels=N_MELS,
+                              n_fft=N_FFT, hop_length=HOP_LENGTH,
+                              win_length=WIN_LENGTH):
+    """
+    Convierte audio a espectrograma Mel en escala logarítmica.
+    Retorna shape: (n_mels, time_steps)
+    """
+    mel_spec = librosa.feature.melspectrogram(
+        y=audio,
+        sr=sr,
+        n_mels=n_mels,
+        n_fft=n_fft,
+        hop_length=hop_length,
+        win_length=win_length,
+        window='hamming',
+        center=True,
+        pad_mode='reflect'
+    )
+
+    # Convertir a escala logarítmica (dB)
+    mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+
+    return mel_spec_db
+
+print("="*60)
+print("🎵 CONFIGURACIÓN DE PREPROCESAMIENTO DE AUDIO")
+print("="*60)
+
+print(f"\n📊 Parámetros:")
+print(f"   Sample Rate: {SAMPLE_RATE} Hz")
+print(f"   N_MELS: {N_MELS}")
+print(f"   N_FFT: {N_FFT} ({N_FFT/SAMPLE_RATE*1000:.1f} ms)")
+print(f"   HOP_LENGTH: {HOP_LENGTH} ({HOP_LENGTH/SAMPLE_RATE*1000:.1f} ms)")
+print(f"   WIN_LENGTH: {WIN_LENGTH} ({WIN_LENGTH/SAMPLE_RATE*1000:.1f} ms)")
+
+# Probar con un audio de ejemplo
+if 'df_combined' in locals() and len(df_combined) > 0:
+    print(f"\n🧪 Probando con audio de ejemplo...")
+    test_audio_path = df_combined.iloc[0]['audio_path']
+    print(f"   Archivo: {os.path.basename(test_audio_path)}")
+
+    audio = load_audio(test_audio_path)
+    if audio is not None:
+        print(f"   ✅ Audio cargado: {len(audio)} samples ({len(audio)/SAMPLE_RATE:.2f} segundos)")
+
+        mel_spec = audio_to_mel_spectrogram(audio)
+        print(f"   ✅ Espectrograma Mel: shape {mel_spec.shape}")
+        print(f"      Frecuencia: {mel_spec.shape[0]} bandas de Mel")
+        print(f"      Tiempo: {mel_spec.shape[1]} frames ({mel_spec.shape[1]*HOP_LENGTH/SAMPLE_RATE:.2f} segundos)")
+        print(f"   ✅ Configuración validada")
+    else:
+        print(f"   ⚠️ No se pudo cargar el audio")
+
+print("="*60)
+
+
+import torch.nn as nn
+
+class ASRCNN_BiLSTM(nn.Module):
+    """
+    Modelo de Reconocimiento Automático de Voz (ASR) interpretable.
+
+    Arquitectura:
+    1. CNN: Extracción de características de espectrogramas Mel
+       - 2 capas convolucionales con BatchNorm, ReLU y Dropout
+       - Reduce dimensionalidad temporal y espacial
+
+    2. BiLSTM: Modelado de secuencias temporales
+       - 4 capas LSTM bidireccionales
+       - Captura dependencias temporales en ambas direcciones
+
+    3. Fully Connected + CTC: Proyección a vocabulario
+       - Capa lineal para mapear a tamaño de vocabulario
+       - LogSoftmax para CTC Loss
+    """
+
+    def __init__(self, n_mels=80, hidden_size=256, vocab_size=30,
+                 num_lstm_layers=4, dropout=0.3):
+        super(ASRCNN_BiLSTM, self).__init__()
+
+        self.n_mels = n_mels
+        self.hidden_size = hidden_size
+        self.vocab_size = vocab_size
+        self.num_lstm_layers = num_lstm_layers
+
+        # ===== CNN para extracción de características =====
+        # Input: (batch, 1, n_mels, time)
+
+        self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+        self.bn1 = nn.BatchNorm2d(32)
+
+        self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+        self.bn2 = nn.BatchNorm2d(64)
+
+        self.relu = nn.ReLU()
+        self.dropout_cnn = nn.Dropout(dropout)
+
+        # Calcular dimensión después de CNN
+        # Con stride=2 en max pooling después de cada conv
+        # n_mels / (2^2) = 80 / 4 = 20
+        # Usaremos 64 canales * altura reducida
+        self.cnn_output_dim = 64 * (n_mels // 4 if n_mels // 4 > 0 else 1)
+
+        # ===== BiLSTM para modelado temporal =====
+        self.lstm = nn.LSTM(
+            input_size=self.cnn_output_dim,
+            hidden_size=hidden_size,
+            num_layers=num_lstm_layers,
+            batch_first=True,
+            bidirectional=True,
+            dropout=dropout if num_lstm_layers > 1 else 0
+        )
+
+        # ===== Fully Connected =====
+        # BiLSTM output: hidden_size * 2 (bidireccional)
+        self.fc = nn.Linear(hidden_size * 2, vocab_size)
+
+        self.log_softmax = nn.LogSoftmax(dim=2)
+
+    def forward(self, x, input_lengths):
+        """
+        Forward pass del modelo.
+
+        Args:
+            x: Tensor (batch, n_mels, time)
+            input_lengths: Tensor con longitudes reales de cada secuencia
+
+        Returns:
+            log_probs: (batch, time, vocab_size) - probabilidades logarítmicas
+            output_lengths: (batch,) - longitudes de salida después de CNN
+        """
+        batch_size = x.size(0)
+
+        # Agregar canal: (batch, 1, n_mels, time)
+        x = x.unsqueeze(1)
+
+        # ===== CNN Feature Extraction =====
+        # Conv1 + MaxPool
+        x = self.relu(self.bn1(self.conv1(x)))
+        x = nn.functional.max_pool2d(x, kernel_size=2, stride=2)
+        x = self.dropout_cnn(x)
+
+        # Conv2 + MaxPool
+        x = self.relu(self.bn2(self.conv2(x)))
+        x = nn.functional.max_pool2d(x, kernel_size=2, stride=2)
+        x = self.dropout_cnn(x)
+
+        # Reshape para LSTM: (batch, time, features)
+        # x shape: (batch, channels, freq, time)
+        batch, channels, freq, time = x.size()
+        x = x.permute(0, 3, 1, 2)  # (batch, time, channels, freq)
+        x = x.reshape(batch, time, channels * freq)  # (batch, time, features)
+
+        # Calcular nuevas longitudes después de pooling (stride=2, 2 veces)
+        output_lengths = (input_lengths / (2 ** 2)).long()
+
+        # ===== BiLSTM =====
+        # Pack padded sequence para eficiencia
+        x = nn.utils.rnn.pack_padded_sequence(
+            x, output_lengths.cpu(), batch_first=True, enforce_sorted=False
+        )
+
+        x, _ = self.lstm(x)
+
+        # Unpack
+        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
+        # ===== Fully Connected =====
+        x = self.fc(x)  # (batch, time, vocab_size)
+
+        # LogSoftmax para CTC
+        log_probs = self.log_softmax(x)
+
+        return log_probs, output_lengths
+
+# Crear instancia del modelo
+if 'vocab' in locals() and len(vocab) > 0:
+    print("="*60)
+    print("🏗️ CREANDO MODELO ASR")
+    print("="*60)
+
+    vocab_size = len(vocab)
+    model = ASRCNN_BiLSTM(
+        n_mels=N_MELS,
+        hidden_size=256,
+        vocab_size=vocab_size,
+        num_lstm_layers=4,
+        dropout=0.3
+    ).to(device)
+
+    print(f"\n📊 Configuración del modelo:")
+    print(f"   Input: Espectrogramas Mel ({N_MELS} bandas)")
+    print(f"   CNN: 2 capas convolucionales (1→32→64)")
+    print(f"   BiLSTM: 4 capas, {256} unidades ocultas por dirección")
+    print(f"   Output: {vocab_size} clases (vocabulario)")
+
+    # Contar parámetros
+    total_params = sum(p.numel() for p in model.parameters())
+    trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+    print(f"\n🔢 Parámetros del modelo:")
+    print(f"   Total: {total_params:,}")
+    print(f"   Entrenables: {trainable_params:,}")
+    print(f"   No entrenables: {total_params - trainable_params:,}")
+
+    print(f"\n💾 Tamaño aproximado del modelo: {total_params * 4 / (1024**2):.1f} MB (float32)")
+
+    # Test con entrada dummy
+    print(f"\n🧪 Probando forward pass...")
+    dummy_input = torch.randn(2, N_MELS, 100).to(device)  # (batch=2, mels=80, time=100)
+    dummy_lengths = torch.tensor([100, 80]).to(device)
+
+    with torch.no_grad():
+        log_probs, output_lengths = model(dummy_input, dummy_lengths)
+
+    print(f"   Input shape: {dummy_input.shape}")
+    print(f"   Output shape: {log_probs.shape}")
+    print(f"   Output lengths: {output_lengths}")
+    print(f"   ✅ Modelo funciona correctamente")
+
+    print("="*60)
+else:
+    print("⚠️ Vocabulario no disponible, no se puede crear el modelo")
+
+from torch.utils.data import Dataset, DataLoader
+
+class ASRDataset(Dataset):
+    """
+    Dataset para ASR que carga audio y convierte a espectrogramas Mel.
+    """
+
+    def __init__(self, dataframe, vocab, sample_rate=16000, n_mels=80,
+                 augment=False, noise_files=None):
+        """
+        Args:
+            dataframe: DataFrame con columnas ['audio_path', 'normalized_text']
+            vocab: Diccionario char -> idx
+            sample_rate: Tasa de muestreo
+            n_mels: Número de bandas Mel
+            augment: Si aplicar data augmentation (DESACTIVADO en este pipeline)
+            noise_files: Lista de archivos de ruido para augmentation (NO USADO)
+        """
+        self.dataframe = dataframe.reset_index(drop=True)
+        self.vocab = vocab
+        self.sample_rate = sample_rate
+        self.n_mels = n_mels
+        self.augment = False  # Desactivar augmentación
+        self.noise_files = []  # No usar ruido
+
+    def __len__(self):
+        return len(self.dataframe)
+
+    def text_to_indices(self, text):
+        """Convierte texto a lista de índices usando vocabulario."""
+        return [self.vocab[char] for char in text if char in self.vocab]
+
+    def __getitem__(self, idx):
+        """
+        Retorna una muestra del dataset.
+
+        Returns:
+            mel_spec: Espectrograma Mel (n_mels, time)
+            target: Índices de caracteres del texto
+            mel_length: Longitud del espectrograma
+            target_length: Longitud del texto
+        """
+        row = self.dataframe.iloc[idx]
+
+        # Cargar audio
+        audio = load_audio(row['audio_path'], sr=self.sample_rate)
+
+        if audio is None:
+            # Si falla, retornar un audio dummy
+            audio = np.zeros(self.sample_rate)  # 1 segundo de silencio
+
+        # NO aplicar augmentation (desactivado para este pipeline)
+
+        # Convertir a espectrograma Mel
+        mel_spec = audio_to_mel_spectrogram(
+            audio,
+            sr=self.sample_rate,
+            n_mels=self.n_mels,
+            n_fft=N_FFT,
+            hop_length=HOP_LENGTH,
+            win_length=WIN_LENGTH
+        )
+
+        # Convertir texto a índices
+        target = self.text_to_indices(row['normalized_text'])
+
+        # Convertir a tensors
+        mel_spec = torch.FloatTensor(mel_spec)  # (n_mels, time)
+        target = torch.LongTensor(target)
+
+        mel_length = mel_spec.size(1)
+        target_length = len(target)
+
+        return mel_spec, target, mel_length, target_length
+
+def collate_fn_asr(batch):
+    """
+    Función para agrupar muestras en batch con padding.
+
+    Args:
+        batch: Lista de tuplas (mel_spec, target, mel_length, target_length)
+
+    Returns:
+        mel_specs_padded: (batch, n_mels, max_time)
+        targets_padded: (batch, max_target_length)
+        mel_lengths: (batch,)
+        target_lengths: (batch,)
+    """
+    # Separar componentes
+    mel_specs, targets, mel_lengths, target_lengths = zip(*batch)
+
+    # Encontrar longitudes máximas
+    max_mel_length = max(mel_lengths)
+    max_target_length = max(target_lengths)
+
+    n_mels = mel_specs[0].size(0)
+    batch_size = len(mel_specs)
+
+    # Crear tensors padded
+    mel_specs_padded = torch.zeros(batch_size, n_mels, max_mel_length)
+    targets_padded = torch.zeros(batch_size, max_target_length, dtype=torch.long)
+
+    # Llenar con datos reales
+    for i in range(batch_size):
+        mel_length = mel_lengths[i]
+        target_length = target_lengths[i]
+
+        mel_specs_padded[i, :, :mel_length] = mel_specs[i]
+        targets_padded[i, :target_length] = targets[i]
+
+    mel_lengths = torch.LongTensor(mel_lengths)
+    target_lengths = torch.LongTensor(target_lengths)
+
+    return mel_specs_padded, targets_padded, mel_lengths, target_lengths
+
+print("="*60)
+print("📦 CREANDO DATASETS")
+print("="*60)
+
+if 'df_combined' in locals() and len(df_combined) > 0 and 'vocab' in locals():
+    # Dividir en train/val/test
+    from sklearn.model_selection import train_test_split
+
+    # Primero separar test (5%)
+    df_train_val, df_test = train_test_split(
+        df_combined,
+        test_size=0.05,
+        random_state=RANDOM_SEED,
+        shuffle=True
+    )
+
+    # Luego dividir train y val (85% train, 10% val del total)
+    # 10/(85+10) = 0.105
+    df_train, df_val = train_test_split(
+        df_train_val,
+        test_size=0.105,
+        random_state=RANDOM_SEED,
+        shuffle=True
+    )
+
+    print(f"\n📊 División de datos:")
+    print(f"   Train: {len(df_train)} muestras ({len(df_train)/len(df_combined)*100:.1f}%)")
+    print(f"   Validation: {len(df_val)} muestras ({len(df_val)/len(df_combined)*100:.1f}%)")
+    print(f"   Test: {len(df_test)} muestras ({len(df_test)/len(df_combined)*100:.1f}%)")
+
+    # Ajustar batch size y workers para CPU
+    BATCH_SIZE = 32  # Ajustar batch size para CPU, 32 es seguro
+    NUM_WORKERS = 0  # Para CPU y evitar errores, usar 0 workers
+
+    # Crear datasets SIN augmentación de ruido
+    train_dataset = ASRDataset(
+        df_train,
+        vocab,
+        augment=False,  # Sin augmentación
+        noise_files=None  # Sin ruido
+    )
+
+    val_dataset = ASRDataset(
+        df_val,
+        vocab,
+        augment=False,
+        noise_files=None
+    )
+
+    test_dataset = ASRDataset(
+        df_test,
+        vocab,
+        augment=False,
+        noise_files=None
+    )
+
+    print(f"\n✅ Datasets creados")
+    print(f"   Train: {len(train_dataset)} muestras (sin augmentation)")
+    print(f"   Validation: {len(val_dataset)} muestras")
+    print(f"   Test: {len(test_dataset)} muestras")
+
+    # Crear DataLoaders
+    train_loader = DataLoader(
+        train_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=True,
+        collate_fn=collate_fn_asr,
+        num_workers=NUM_WORKERS,
+        pin_memory=True  # Solo True si hay GPU
+    )
+
+    val_loader = DataLoader(
+        val_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        collate_fn=collate_fn_asr,
+        num_workers=NUM_WORKERS,
+        pin_memory=False
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=BATCH_SIZE,
+        shuffle=False,
+        collate_fn=collate_fn_asr,
+        num_workers=NUM_WORKERS,
+        pin_memory=False
+    )
+
+    print(f"\n✅ DataLoaders creados")
+    print(f"   Batch size: {BATCH_SIZE}")
+    print(f"   Train batches: {len(train_loader)}")
+    print(f"   Val batches: {len(val_loader)}")
+    print(f"   Test batches: {len(test_loader)}")
+
+    # Probar un batch
+    print(f"\n🧪 Probando DataLoader...")
+    mel_specs, targets, mel_lengths, target_lengths = next(iter(train_loader))
+    print(f"   Mel specs shape: {mel_specs.shape}")
+    print(f"   Targets shape: {targets.shape}")
+    print(f"   Mel lengths: {mel_lengths[:5].tolist()}")
+    print(f"   Target lengths: {target_lengths[:5].tolist()}")
+    print(f"   ✅ DataLoader funciona correctamente")
+
+print("="*60)
+
+from jiwer import cer, wer
+
+def greedy_decode(log_probs, idx_to_char, blank_idx=0):
+    """
+    Decodificador greedy para CTC.
+
+    Args:
+        log_probs: (batch, time, vocab_size) - log probabilidades
+        idx_to_char: Diccionario idx -> char
+        blank_idx: Índice del token blank
+
+    Returns:
+        Lista de strings decodificados
+    """
+    # Tomar argmax en cada timestep
+    _, indices = torch.max(log_probs, dim=2)  # (batch, time)
+
+    decoded_texts = []
+
+    for batch_idx in range(indices.size(0)):
+        sequence = indices[batch_idx].cpu().numpy()
+
+        # Eliminar duplicados consecutivos
+        decoded_chars = []
+        prev_idx = None
+
+        for idx in sequence:
+            if idx != prev_idx and idx != blank_idx:
+                decoded_chars.append(idx_to_char[idx])
+            prev_idx = idx
+
+        decoded_text = ''.join(decoded_chars)
+        decoded_texts.append(decoded_text)
+
+    return decoded_texts
+
+def calculate_char_accuracy(predictions, references):
+    """
+    Calcula la precisión estricta de caracteres y palabras.
+
+    Args:
+        predictions: Lista de strings predichos
+        references: Lista de strings de referencia
+
+    Returns:
+        char_acc: Precisión de caracteres (0-1)
+        word_acc: Precisión de palabras (0-1)
+    """
+    total_chars = 0
+    correct_chars = 0
+    total_words = 0
+    correct_words = 0
+
+    for pred, ref in zip(predictions, references):
+        # Precisión de caracteres
+        min_len = min(len(pred), len(ref))
+        for i in range(min_len):
+            if pred[i] == ref[i]:
+                correct_chars += 1
+        total_chars += len(ref)
+
+        # Penalizar si la predicción es más larga o corta
+        if len(pred) != len(ref):
+            # Añadir caracteres incorrectos por diferencia de longitud
+            total_chars += abs(len(pred) - len(ref))
+
+        # Precisión de palabras
+        pred_words = pred.split()
+        ref_words = ref.split()
+        min_wlen = min(len(pred_words), len(ref_words))
+        for i in range(min_wlen):
+            if pred_words[i] == ref_words[i]:
+                correct_words += 1
+        total_words += len(ref_words)
+
+        # Penalizar palabras extra o faltantes
+        if len(pred_words) != len(ref_words):
+            total_words += abs(len(pred_words) - len(ref_words))
+
+    char_acc = correct_chars / total_chars if total_chars > 0 else 0.0
+    word_acc = correct_words / total_words if total_words > 0 else 0.0
+
+    return char_acc, word_acc
+
+def calculate_metrics(predictions, references):
+    """
+    Calcula CER, WER y precisiones de forma estricta.
+
+    Args:
+        predictions: Lista de strings predichos
+        references: Lista de strings de referencia
+
+    Returns:
+        cer_score: Character Error Rate
+        wer_score: Word Error Rate
+        char_acc: Precisión de caracteres
+        word_acc: Precisión de palabras
+    """
+    try:
+        # Filtrar pares donde la referencia está vacía
+        valid_pairs = [(p, r) for p, r in zip(predictions, references)
+                       if len(r.strip()) > 0]
+
+        if len(valid_pairs) == 0:
+            return 1.0, 1.0, 0.0, 0.0
+
+        predictions_valid, references_valid = zip(*valid_pairs)
+
+        # Calcular CER y WER usando jiwer
+        cer_score = cer(list(references_valid), list(predictions_valid))
+        wer_score = wer(list(references_valid), list(predictions_valid))
+
+        # Calcular precisiones estrictas
+        char_acc, word_acc = calculate_char_accuracy(predictions_valid, references_valid)
+
+        return cer_score, wer_score, char_acc, word_acc
+    except Exception as e:
+        print(f"Error calculando métricas: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1.0, 1.0, 0.0, 0.0
+
+def evaluate_model(model, data_loader, idx_to_char, device):
+    """
+    Evalúa el modelo en un dataset.
+
+    Returns:
+        avg_loss: Pérdida promedio
+        cer_score: Character Error Rate
+        wer_score: Word Error Rate
+        char_acc: Precisión de caracteres
+        word_acc: Precisión de palabras
+        predictions: Lista de predicciones
+        references: Lista de referencias
+    """
+    model.eval()
+
+    total_loss = 0
+    all_predictions = []
+    all_references = []
+
+    ctc_loss = nn.CTCLoss(blank=0, zero_infinity=True)
+
+    with torch.no_grad():
+        for mel_specs, targets, mel_lengths, target_lengths in data_loader:
+            mel_specs = mel_specs.to(device)
+            targets = targets.to(device)
+            mel_lengths = mel_lengths.to(device)
+            target_lengths = target_lengths.to(device)
+
+            # Forward pass
+            log_probs, output_lengths = model(mel_specs, mel_lengths)
+
+            # Preparar targets para CTCLoss (concatenados en 1D)
+            targets = targets.long()
+            target_lengths = target_lengths.long()
+            targets_list = [targets[i, :target_lengths[i]].cpu() for i in range(targets.size(0))]
+            if len(targets_list) == 0:
+                targets_flat = torch.LongTensor([]).to(device)
+            else:
+                targets_flat = torch.cat(targets_list).to(device)
+
+            # Calcular loss
+            log_probs_transposed = log_probs.transpose(0, 1)  # (time, batch, vocab)
+            input_lengths_ctc = output_lengths.cpu()
+            target_lengths_ctc = target_lengths.cpu()
+            loss = ctc_loss(log_probs_transposed, targets_flat, input_lengths_ctc, target_lengths_ctc)
+
+            total_loss += loss.item()
+
+            # Decodificar predicciones
+            predictions = greedy_decode(log_probs, idx_to_char)
+
+            # Convertir referencias a texto
+            references = []
+            for i in range(targets.size(0)):
+                target_seq = targets[i][:target_lengths[i]].cpu().numpy()
+                ref_text = ''.join([idx_to_char[idx] for idx in target_seq])
+                references.append(ref_text)
+
+            all_predictions.extend(predictions)
+            all_references.extend(references)
+
+    avg_loss = total_loss / len(data_loader)
+    cer_score, wer_score, char_acc, word_acc = calculate_metrics(all_predictions, all_references)
+
+    return avg_loss, cer_score, wer_score, char_acc, word_acc, all_predictions, all_references
+
+print("✅ Funciones de evaluación definidas")
+print("   - greedy_decode: Decodificador CTC greedy")
+print("   - calculate_metrics: Calcula CER, WER y precisiones")
+print("   - calculate_char_accuracy: Precisión estricta de caracteres/palabras")
+print("   - evaluate_model: Evalúa modelo completo con métricas detalladas")
+
+import time
+import pickle
+from datetime import datetime
+
+# Crear directorio para checkpoints
+checkpoint_dir = '/content/checkpoints'
+os.makedirs(checkpoint_dir, exist_ok=True)
+
+print("="*60)
+print("🚀 CONFIGURACIÓN DE ENTRENAMIENTO")
+print("="*60)
+
+# Hiperparámetros
+NUM_EPOCHS = 41
+LEARNING_RATE = 0.0003
+EARLY_STOPPING_PATIENCE = 3
+CHECKPOINT_EVERY = 2  # Guardar cada 2 épocas
+
+print(f"\n⚙️ Hiperparámetros:")
+print(f"   Épocas: {NUM_EPOCHS}")
+print(f"   Learning rate: {LEARNING_RATE}")
+print(f"   Early stopping patience: {EARLY_STOPPING_PATIENCE}")
+print(f"   Checkpoint cada: {CHECKPOINT_EVERY} épocas")
+print(f"   Batch size: {BATCH_SIZE}")
+print(f"   Device: {device}")
+
+# Definir loss y optimizer
+ctc_loss = nn.CTCLoss(blank=0, zero_infinity=True)
+optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+
+# Learning rate scheduler
+scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    optimizer,
+    mode='min',
+    factor=0.5,
+    patience=3
+)
+
+print(f"\n✅ Optimizer y scheduler configurados")
+print(f"   Optimizer: Adam (lr={LEARNING_RATE})")
+print(f"   Scheduler: ReduceLROnPlateau (factor=0.5, patience=3)")
+
+# Variables para tracking
+best_cer = float('inf')
+epochs_without_improvement = 0
+train_losses = []
+val_losses = []
+val_cers = []
+val_wers = []
+
+print(f"\n📊 Tracking inicializado")
+print(f"   Mejor CER: {best_cer}")
+print(f"   Directorio de checkpoints: {checkpoint_dir}")
+
+print("="*60)
+
+def save_checkpoint(epoch, model, optimizer, scheduler, train_loss, val_loss,
+                    val_cer, val_wer, val_char_acc, val_word_acc, vocab, idx_to_char, is_best=False):
+    """
+    Guarda checkpoint del modelo.
+    """
+    checkpoint = {
+        'epoch': epoch,
+        'model_state_dict': model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'scheduler_state_dict': scheduler.state_dict(),
+        'train_loss': train_loss,
+        'val_loss': val_loss,
+        'val_cer': val_cer,
+        'val_wer': val_wer,
+        'char_accuracy': val_char_acc,
+        'word_accuracy': val_word_acc,
+        'vocab': vocab,
+        'idx_to_char': idx_to_char,
+        'model_config': {
+            'n_mels': N_MELS,
+            'hidden_size': 256,
+            'vocab_size': len(vocab),
+            'num_lstm_layers': 4,
+            'dropout': 0.3,
+            'sample_rate': SAMPLE_RATE,
+            'n_fft': N_FFT,
+            'hop_length': HOP_LENGTH,
+            'win_length': WIN_LENGTH
+        }
+    }
+
+    # Guardar checkpoint regular
+    checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch}.pth')
+    torch.save(checkpoint, checkpoint_path)
+    print(f"   💾 Checkpoint guardado: {checkpoint_path}")
+
+    # Si es el mejor modelo, guardar también como best_model.pth
+    if is_best:
+        best_model_path = os.path.join(checkpoint_dir, 'best_model.pth')
+        torch.save(checkpoint, best_model_path)
+        print(f"   ⭐ Mejor modelo guardado: {best_model_path}")
+
+    return checkpoint_path
+
+def load_checkpoint(checkpoint_path, model, optimizer=None, scheduler=None):
+    """
+    Carga checkpoint del modelo.
+    """
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+
+    model.load_state_dict(checkpoint['model_state_dict'])
+
+    if optimizer is not None:
+        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    if scheduler is not None:
+        scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+
+    epoch = checkpoint['epoch']
+    val_cer = checkpoint['val_cer']
+
+    print(f"✅ Checkpoint cargado desde época {epoch} (CER: {val_cer:.4f})")
+
+    return checkpoint
+
+print("✅ Funciones de guardado/carga de checkpoints definidas")
+
+# ============================================================
+# CONFIGURACIÓN PARA REANUDAR ENTRENAMIENTO
+# ============================================================
+# Si quieres continuar desde un checkpoint anterior, cambia RESUME_FROM_CHECKPOINT a True
+# y especifica la ruta del checkpoint
+
+RESUME_FROM_CHECKPOINT = True  # Cambiar a True para reanudar
+CHECKPOINT_TO_RESUME = '/content/checkpoints/checkpoint_epoch_40.pth'  # Cambiar el número de época
+
+# Variables para controlar el inicio del entrenamiento
+start_epoch = 1
+best_cer_loaded = float('inf')
+
+if RESUME_FROM_CHECKPOINT:
+    print("="*60)
+    print("🔄 REANUDANDO ENTRENAMIENTO DESDE CHECKPOINT")
+    print("="*60)
+
+    if os.path.exists(CHECKPOINT_TO_RESUME):
+        # Cargar checkpoint
+        checkpoint = load_checkpoint(CHECKPOINT_TO_RESUME, model, optimizer, scheduler)
+
+        # Recuperar información del checkpoint
+        start_epoch = checkpoint['epoch'] + 1
+        best_cer_loaded = checkpoint['val_cer']
+
+        print(f"\n📊 Información del checkpoint:")
+        print(f"   Época cargada: {checkpoint['epoch']}")
+        print(f"   Train Loss: {checkpoint['train_loss']:.4f}")
+        print(f"   Val Loss: {checkpoint['val_loss']:.4f}")
+        print(f"   Val CER: {checkpoint['val_cer']*100:.2f}%")
+        print(f"   Val WER: {checkpoint['val_wer']*100:.2f}%")
+        print(f"\n✅ Entrenamiento continuará desde la época {start_epoch}")
+        print(f"   Mejor CER hasta ahora: {best_cer_loaded*100:.2f}%")
+
+        # Actualizar la variable best_cer para el entrenamiento
+        best_cer = best_cer_loaded
+
+        print("="*60)
+    else:
+        print(f"❌ ERROR: No se encontró el checkpoint en {CHECKPOINT_TO_RESUME}")
+        print(f"   Verifica la ruta y vuelve a intentar")
+        print(f"   El entrenamiento empezará desde la época 1")
+        print("="*60)
+else:
+    print("="*60)
+    print("ℹ️ ENTRENAMIENTO DESDE CERO")
+    print("="*60)
+    print("Si quieres reanudar desde un checkpoint:")
+    print("1. Cambia RESUME_FROM_CHECKPOINT = True")
+    print("2. Especifica la ruta del checkpoint en CHECKPOINT_TO_RESUME")
+    print("3. Vuelve a ejecutar esta celda")
+    print("="*60)
+
+print("="*60)
+print("🎓 INICIANDO ENTRENAMIENTO")
+print("="*60)
+print(f"Fecha de inicio: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print()
+
+training_start_time = time.time()
+
+for epoch in range(start_epoch, NUM_EPOCHS + 1):
+    epoch_start_time = time.time()
+
+    print(f"\n{'='*60}")
+    print(f"📚 ÉPOCA {epoch}/{NUM_EPOCHS}")
+    print(f"{'='*60}")
+
+    # ===== FASE DE ENTRENAMIENTO =====
+    model.train()
+    train_loss_epoch = 0
+
+    print(f"\n🔄 Entrenando...")
+    train_pbar = tqdm(train_loader, desc=f"Época {epoch} - Train", leave=False)
+
+    for batch_idx, (mel_specs, targets, mel_lengths, target_lengths) in enumerate(train_pbar):
+        mel_specs = mel_specs.to(device)
+        targets = targets.to(device)
+        mel_lengths = mel_lengths.to(device)
+        target_lengths = target_lengths.to(device)
+
+        # Forward pass
+        log_probs, output_lengths = model(mel_specs, mel_lengths)
+
+        # Preparar targets para CTCLoss (concatenados en 1D)
+        targets = targets.long()
+        target_lengths = target_lengths.long()
+        targets_list = [targets[i, :target_lengths[i]].cpu() for i in range(targets.size(0))]
+        targets_flat = torch.cat(targets_list).to(device) if len(targets_list) > 0 else torch.LongTensor([]).to(device)
+
+        # Calcular loss (CTC necesita: (T, N, C))
+        log_probs_transposed = log_probs.transpose(0, 1)  # (time, batch, vocab)
+        input_lengths_ctc = output_lengths.cpu()
+        target_lengths_ctc = target_lengths.cpu()
+        loss = ctc_loss(log_probs_transposed, targets_flat, input_lengths_ctc, target_lengths_ctc)
+
+        # Backward pass
+        optimizer.zero_grad()
+        loss.backward()
+
+        # Gradient clipping para estabilidad
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
+
+        optimizer.step()
+
+        train_loss_epoch += loss.item()
+
+        # Actualizar barra de progreso
+        train_pbar.set_postfix({'loss': f'{loss.item():.4f}'})
+
+    avg_train_loss = train_loss_epoch / len(train_loader)
+    train_losses.append(avg_train_loss)
+
+    print(f"\n✅ Entrenamiento completado")
+    print(f"   Train Loss: {avg_train_loss:.4f}")
+
+    # ===== FASE DE VALIDACIÓN =====
+    print(f"\n🔍 Validando...")
+    val_loss, val_cer, val_wer, val_char_acc, val_word_acc, val_predictions, val_references = evaluate_model(
+        model, val_loader, idx_to_char, device
+    )
+
+    val_losses.append(val_loss)
+    val_cers.append(val_cer)
+    val_wers.append(val_wer)
+
+    print(f"\n✅ Validación completada")
+    print(f"   Val Loss: {val_loss:.4f}")
+    print(f"   Val CER: {val_cer*100:.2f}%")
+    print(f"   Val WER: {val_wer*100:.2f}%")
+    print(f"\n🎯 Precisión del modelo:")
+    print(f"   Precisión de caracteres: {val_char_acc*100:.2f}%")
+    print(f"   Precisión de palabras: {val_word_acc*100:.2f}%")
+    print(f"   Precisión general: {(val_char_acc + val_word_acc)/2*100:.2f}%")
+
+    # Mostrar ejemplos de predicciones con CER individual
+    print(f"\n📝 Ejemplos de predicciones:")
+    for i in range(min(5, len(val_predictions))):
+        ref = val_references[i][:70]
+        pred = val_predictions[i][:70]
+
+        # Calcular CER individual
+        try:
+            from jiwer import cer as cer_calc
+            individual_cer = cer_calc([val_references[i]], [val_predictions[i]]) if len(val_references[i]) > 0 else 0
+        except:
+            individual_cer = 0
+
+        print(f"   {i+1}. Referencia:  '{ref}'")
+        print(f"      Predicción:  '{pred}'")
+        print(f"      CER: {individual_cer*100:.1f}%")
+        print()
+
+    # Actualizar learning rate
+    scheduler.step(val_cer)
+    current_lr = optimizer.param_groups[0]['lr']
+    print(f"   Learning rate actual: {current_lr:.6f}")
+
+    # ===== GUARDAR CHECKPOINTS =====
+    is_best = val_cer < best_cer
+
+    # Guardar checkpoint cada CHECKPOINT_EVERY épocas o si es el mejor
+    if epoch % CHECKPOINT_EVERY == 0 or is_best:
+        print(f"\n💾 Guardando checkpoint...")
+        save_checkpoint(
+            epoch, model, optimizer, scheduler,
+            avg_train_loss, val_loss, val_cer, val_wer,
+            val_char_acc, val_word_acc,
+            vocab, idx_to_char, is_best=is_best
+        )
+
+    # Actualizar mejor modelo
+    if is_best:
+        print(f"\n⭐ ¡Nuevo mejor modelo! CER mejoró de {best_cer*100:.2f}% a {val_cer*100:.2f}%")
+        print(f"   Precisión general: {(val_char_acc + val_word_acc)/2*100:.2f}%")
+        best_cer = val_cer
+        epochs_without_improvement = 0
+    else:
+        epochs_without_improvement += 1
+        print(f"\n⏳ Sin mejora por {epochs_without_improvement} época(s)")
+
+    # Early stopping
+    if epochs_without_improvement >= EARLY_STOPPING_PATIENCE:
+        print(f"\n🛑 Early Stopping: Sin mejora por {EARLY_STOPPING_PATIENCE} épocas")
+        print(f"   Mejor CER: {best_cer*100:.2f}%")
+        break
+
+    epoch_time = time.time() - epoch_start_time
+    print(f"\n⏱️ Tiempo de época: {epoch_time/60:.2f} minutos")
+    print(f"{'='*60}")
+
+# ===== FIN DEL ENTRENAMIENTO =====
+training_time = time.time() - training_start_time
+
+print(f"\n{'='*60}")
+print("✅ ENTRENAMIENTO COMPLETADO")
+print(f"{'='*60}")
+print(f"Fecha de fin: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+print(f"Tiempo total: {training_time/3600:.2f} horas ({training_time/60:.1f} minutos)")
+print(f"Mejor CER: {best_cer*100:.2f}%")
+print(f"Épocas completadas: {epoch}/{NUM_EPOCHS}")
+print(f"Checkpoints guardados en: {checkpoint_dir}")
+print(f"{'='*60}")
+
+
+import matplotlib.pyplot as plt
+
+print("="*60)
+print("📊 VISUALIZACIÓN DE RESULTADOS")
+print("="*60)
+
+# Crear figura con subplots
+fig, axes = plt.subplots(2, 2, figsize=(15, 10))
+
+# 1. Train vs Val Loss
+axes[0, 0].plot(range(1, len(train_losses) + 1), train_losses, 'b-', label='Train Loss', linewidth=2)
+axes[0, 0].plot(range(1, len(val_losses) + 1), val_losses, 'r-', label='Val Loss', linewidth=2)
+axes[0, 0].set_xlabel('Época', fontsize=12)
+axes[0, 0].set_ylabel('Loss (CTC)', fontsize=12)
+axes[0, 0].set_title('Curvas de Pérdida', fontsize=14, fontweight='bold')
+axes[0, 0].legend(fontsize=11)
+axes[0, 0].grid(True, alpha=0.3)
+
+# 2. CER over epochs
+axes[0, 1].plot(range(1, len(val_cers) + 1), [c*100 for c in val_cers], 'g-', linewidth=2)
+axes[0, 1].set_xlabel('Época', fontsize=12)
+axes[0, 1].set_ylabel('CER (%)', fontsize=12)
+axes[0, 1].set_title('Character Error Rate', fontsize=14, fontweight='bold')
+axes[0, 1].grid(True, alpha=0.3)
+axes[0, 1].axhline(y=15, color='orange', linestyle='--', label='Objetivo: <15%')
+axes[0, 1].axhline(y=10, color='green', linestyle='--', label='Muy bueno: <10%')
+axes[0, 1].legend(fontsize=9)
+
+# 3. WER over epochs
+axes[1, 0].plot(range(1, len(val_wers) + 1), [w*100 for w in val_wers], 'm-', linewidth=2)
+axes[1, 0].set_xlabel('Época', fontsize=12)
+axes[1, 0].set_ylabel('WER (%)', fontsize=12)
+axes[1, 0].set_title('Word Error Rate', fontsize=14, fontweight='bold')
+axes[1, 0].grid(True, alpha=0.3)
+
+# 4. Estadísticas finales
+axes[1, 1].axis('off')
+stats_text = f"""
+RESUMEN DEL ENTRENAMIENTO
+
+🎯 Mejor Modelo:
+   CER: {best_cer*100:.2f}%
+   Época: {val_cers.index(best_cer) + 1}
+
+📈 Final (última época):
+   CER: {val_cers[-1]*100:.2f}%
+   WER: {val_wers[-1]*100:.2f}%
+   Train Loss: {train_losses[-1]:.4f}
+   Val Loss: {val_losses[-1]:.4f}
+
+⏱️ Entrenamiento:
+   Épocas: {len(train_losses)}/{NUM_EPOCHS}
+   Tiempo: {training_time/60:.1f} min
+
+💾 Checkpoints:
+   Directorio: {checkpoint_dir}
+"""
+axes[1, 1].text(0.1, 0.5, stats_text, fontsize=11, family='monospace',
+                verticalalignment='center')
+
+plt.tight_layout()
+plt.savefig(os.path.join(checkpoint_dir, 'training_curves.png'), dpi=150, bbox_inches='tight')
+print(f"\n✅ Gráficas guardadas: {os.path.join(checkpoint_dir, 'training_curves.png')}")
+plt.show()
+
+print("="*60)
+
+
+print("="*60)
+print("🧪 EVALUACIÓN EN TEST SET")
+print("="*60)
+
+# Cargar el mejor modelo
+best_model_path = os.path.join(checkpoint_dir, 'best_model.pth')
+
+if os.path.exists(best_model_path):
+    print(f"\n📂 Cargando mejor modelo: {best_model_path}")
+    checkpoint = load_checkpoint(best_model_path, model)
+
+    print(f"\n🔍 Evaluando en test set...")
+    test_loss, test_cer, test_wer, test_char_acc, test_word_acc, test_predictions, test_references = evaluate_model(
+        model, test_loader, idx_to_char, device
+    )
+
+    print(f"\n{'='*60}")
+    print("📊 RESULTADOS EN TEST SET")
+    print(f"{'='*60}")
+    print(f"Test Loss: {test_loss:.4f}")
+    print(f"Test CER: {test_cer*100:.2f}%")
+    print(f"Test WER: {test_wer*100:.2f}%")
+    print(f"\n🎯 Precisión del modelo:")
+    print(f"   Precisión de caracteres: {test_char_acc*100:.2f}%")
+    print(f"   Precisión de palabras: {test_word_acc*100:.2f}%")
+    print(f"   Precisión general: {(test_char_acc + test_word_acc)/2*100:.2f}%")
+    print(f"\nMuestras evaluadas: {len(test_predictions)}")
+
+    # Clasificación de calidad basada en CER
+    print(f"\n🎯 Evaluación de calidad (basada en CER):")
+    if test_cer < 0.05:
+        quality = "⭐⭐⭐ EXCELENTE"
+    elif test_cer < 0.10:
+        quality = "⭐⭐ MUY BUENO"
+    elif test_cer < 0.15:
+        quality = "⭐ BUENO"
+    else:
+        quality = "⚠️ NECESITA MEJORA"
+
+    print(f"   Calidad: {quality}")
+    print(f"   CER < 5%: Excelente")
+    print(f"   CER 5-10%: Muy bueno")
+    print(f"   CER 10-15%: Bueno")
+    print(f"   CER > 15%: Necesita mejora")
+
+    # Clasificación de calidad basada en precisión general
+    print(f"\n🎯 Evaluación de calidad (basada en precisión):")
+    general_acc = (test_char_acc + test_word_acc) / 2
+    if general_acc > 0.95:
+        quality_acc = "⭐⭐⭐ EXCELENTE"
+    elif general_acc > 0.90:
+        quality_acc = "⭐⭐ MUY BUENO"
+    elif general_acc > 0.85:
+        quality_acc = "⭐ BUENO"
+    else:
+        quality_acc = "⚠️ NECESITA MEJORA"
+
+    print(f"   Calidad: {quality_acc}")
+    print(f"   Precisión > 95%: Excelente")
+    print(f"   Precisión 90-95%: Muy bueno")
+    print(f"   Precisión 85-90%: Bueno")
+    print(f"   Precisión < 85%: Necesita mejora")
+
+    # Ejemplos de predicciones
+    print(f"\n📝 Ejemplos de predicciones en test:")
+    for i in range(min(10, len(test_predictions))):
+        ref = test_references[i]
+        pred = test_predictions[i]
+
+        # Calcular CER individual
+        try:
+            from jiwer import cer as cer_calc
+            individual_cer = cer_calc([ref], [pred]) if len(ref) > 0 else 0
+        except:
+            individual_cer = 0
+
+        print(f"\n{i+1}. Referencia:  '{ref[:70]}'")
+        print(f"   Predicción:  '{pred[:70]}'")
+        print(f"   CER: {individual_cer*100:.1f}%")
+
+    print(f"\n{'='*60}")
+
+else:
+    print(f"\n⚠️ No se encontró el mejor modelo en: {best_model_path}")
+    print("   Ejecuta primero el entrenamiento")
+
+print("="*60)
+
+import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+from collections import defaultdict
+
+def create_confusion_matrix(predictions, references, vocab, idx_to_char):
+    """
+    Crea una matriz de confusión de caracteres.
+
+    Args:
+        predictions: Lista de predicciones
+        references: Lista de referencias
+        vocab: Vocabulario (char -> idx)
+        idx_to_char: Mapeo inverso (idx -> char)
+
+    Returns:
+        confusion_matrix: Matriz de confusión
+        char_labels: Etiquetas de caracteres
+    """
+    # Obtener caracteres únicos (excluyendo blank)
+    chars = sorted([c for c in vocab.keys() if c != '<blank>'])
+    char_to_idx_local = {c: i for i, c in enumerate(chars)}
+    n_chars = len(chars)
+
+    # Inicializar matriz
+    confusion = np.zeros((n_chars, n_chars), dtype=int)
+
+    # Llenar matriz
+    for pred, ref in zip(predictions, references):
+        # Alinear caracteres (simple: comparar posición por posición)
+        max_len = max(len(pred), len(ref))
+        pred_padded = pred + ' ' * (max_len - len(pred))
+        ref_padded = ref + ' ' * (max_len - len(ref))
+
+        for p_char, r_char in zip(pred_padded, ref_padded):
+            if p_char in char_to_idx_local and r_char in char_to_idx_local:
+                p_idx = char_to_idx_local[p_char]
+                r_idx = char_to_idx_local[r_char]
+                confusion[r_idx, p_idx] += 1
+
+    return confusion, chars
+
+# Crear y visualizar matriz de confusión
+if 'test_predictions' in locals() and 'test_references' in locals():
+    print("="*60)
+    print("📊 GENERANDO MATRIZ DE CONFUSIÓN")
+    print("="*60)
+
+    print("\n⏳ Calculando matriz de confusión...")
+    confusion_matrix, char_labels = create_confusion_matrix(
+        test_predictions, test_references, vocab, idx_to_char
+    )
+
+    # Normalizar por filas (porcentaje)
+    confusion_normalized = confusion_matrix.astype(float)
+    row_sums = confusion_matrix.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1  # Evitar división por cero
+    confusion_normalized = confusion_normalized / row_sums
+
+    # Visualizar matriz completa (puede ser grande)
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 8))
+
+    # Matriz de conteos
+    sns.heatmap(confusion_matrix[:20, :20], annot=False, fmt='d', cmap='Blues',
+                xticklabels=char_labels[:20], yticklabels=char_labels[:20],
+                ax=ax1, cbar_kws={'label': 'Conteo'})
+    ax1.set_title('Matriz de Confusión (Conteos) - Primeros 20 caracteres', fontsize=14)
+    ax1.set_xlabel('Predicción', fontsize=12)
+    ax1.set_ylabel('Referencia', fontsize=12)
+
+    # Matriz normalizada
+    sns.heatmap(confusion_normalized[:20, :20], annot=False, fmt='.2f', cmap='RdYlGn_r',
+                xticklabels=char_labels[:20], yticklabels=char_labels[:20],
+                ax=ax2, cbar_kws={'label': 'Proporción'}, vmin=0, vmax=1)
+    ax2.set_title('Matriz de Confusión (Normalizada) - Primeros 20 caracteres', fontsize=14)
+    ax2.set_xlabel('Predicción', fontsize=12)
+    ax2.set_ylabel('Referencia', fontsize=12)
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(checkpoint_dir, 'confusion_matrix.png'), dpi=150, bbox_inches='tight')
+    print(f"\n✅ Matriz guardada: {os.path.join(checkpoint_dir, 'confusion_matrix.png')}")
+    plt.show()
+
+    # Encontrar los errores más comunes
+    print(f"\n📋 ERRORES MÁS COMUNES:")
+    print(f"{'='*60}")
+
+    errors = []
+    for i, ref_char in enumerate(char_labels):
+        for j, pred_char in enumerate(char_labels):
+            if i != j and confusion_matrix[i, j] > 0:
+                errors.append((ref_char, pred_char, confusion_matrix[i, j]))
+
+    # Ordenar por frecuencia
+    errors.sort(key=lambda x: x[2], reverse=True)
+
+    print("\nTop 15 confusiones de caracteres:")
+    print(f"{'Referencia':<12} {'Predicción':<12} {'Frecuencia':<12}")
+    print("-" * 40)
+    for ref_c, pred_c, count in errors[:15]:
+        ref_display = ref_c if ref_c != ' ' else '<espacio>'
+        pred_display = pred_c if pred_c != ' ' else '<espacio>'
+        print(f"{ref_display:<12} {pred_display:<12} {count:<12}")
+
+    # Calcular precisión por carácter
+    print(f"\n📊 PRECISIÓN POR CARÁCTER:")
+    print(f"{'='*60}")
+
+    char_accuracies = []
+    for i, char in enumerate(char_labels):
+        total = confusion_matrix[i, :].sum()
+        if total > 0:
+            correct = confusion_matrix[i, i]
+            accuracy = correct / total
+            char_accuracies.append((char, accuracy, total))
+
+    # Ordenar por precisión (menor a mayor)
+    char_accuracies.sort(key=lambda x: x[1])
+
+    print("\nCaracteres con MENOR precisión:")
+    print(f"{'Carácter':<12} {'Precisión':<12} {'Apariciones':<12}")
+    print("-" * 40)
+    for char, acc, total in char_accuracies[:10]:
+        char_display = char if char != ' ' else '<espacio>'
+        print(f"{char_display:<12} {acc*100:>10.1f}% {total:>12}")
+
+    print(f"\n{'='*60}")
+
+else:
+    print("\n⚠️ Ejecuta primero la evaluación en el test set")
+    print("="*60)
+
+print("="*60)
+print("💾 EXPORTANDO MODELO PARA USO FUTURO")
+print("="*60)
+
+# Directorio de exportación
+export_dir = '/content/asr_model_export'
+os.makedirs(export_dir, exist_ok=True)
+
+# 1. Copiar el mejor modelo
+best_model_path = os.path.join(checkpoint_dir, 'best_model.pth')
+export_model_path = os.path.join(export_dir, 'model.pth')
+
+if os.path.exists(best_model_path):
+    import shutil
+    shutil.copy2(best_model_path, export_model_path)
+    print(f"\n✅ Modelo copiado: {export_model_path}")
+else:
+    print(f"\n⚠️ No se encontró best_model.pth")
+
+# 2. Guardar vocabulario
+vocab_path = os.path.join(export_dir, 'vocab.json')
+with open(vocab_path, 'w', encoding='utf-8') as f:
+    json.dump({'vocab': vocab, 'idx_to_char': idx_to_char}, f, ensure_ascii=False, indent=2)
+print(f"✅ Vocabulario guardado: {vocab_path}")
+
+# 3. Guardar configuración del modelo
+config_path = os.path.join(export_dir, 'config.json')
+config = {
+    'n_mels': N_MELS,
+    'sample_rate': SAMPLE_RATE,
+    'n_fft': N_FFT,
+    'hop_length': HOP_LENGTH,
+    'win_length': WIN_LENGTH,
+    'hidden_size': 256,
+    'vocab_size': len(vocab),
+    'num_lstm_layers': 4,
+    'dropout': 0.3,
+    'best_cer': float(best_cer),
+    'best_wer': float(min(val_wers)) if len(val_wers) > 0 else None
+}
+
+with open(config_path, 'w') as f:
+    json.dump(config, f, indent=2)
+print(f"✅ Configuración guardada: {config_path}")
+
+# 4. Guardar README con instrucciones
+readme_path = os.path.join(export_dir, 'README.txt')
+readme_content = f"""
+==============================================================
+MODELO ASR - RECONOCIMIENTO AUTOMÁTICO DE VOZ EN ESPAÑOL
+==============================================================
+
+📊 INFORMACIÓN DEL MODELO
+--------------------------
+CER en validación: {best_cer*100:.2f}%
+WER en validación: {min(val_wers)*100:.2f}%
+Vocabulario: {len(vocab)} caracteres
+Parámetros: ~{sum(p.numel() for p in model.parameters()):,}
+
+📂 ARCHIVOS INCLUIDOS
+---------------------
+- model.pth: Checkpoint completo del modelo
+- vocab.json: Vocabulario (char <-> index)
+- config.json: Configuración del modelo
+- README.txt: Este archivo
+
+🚀 CÓMO USAR EL MODELO
+----------------------
+Ver la celda siguiente con el código de inferencia completo.
+
+El modelo transcribe audio en español a texto.
+
+📋 REQUISITOS
+-------------
+- PyTorch
+- librosa
+- numpy
+
+⚙️ CONFIGURACIÓN
+----------------
+Sample Rate: {SAMPLE_RATE} Hz
+Mel Bands: {N_MELS}
+Hidden Size: 256
+LSTM Layers: 4
+
+📅 FECHA DE ENTRENAMIENTO
+-------------------------
+{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+==============================================================
+"""
+
+with open(readme_path, 'w', encoding='utf-8') as f:
+    f.write(readme_content)
+print(f"✅ README guardado: {readme_path}")
+
+# 5. Comprimir todo para descarga fácil
+print(f"\n📦 Comprimiendo archivos...")
+shutil.make_archive('/content/asr_model', 'zip', export_dir)
+print(f"✅ Archivo comprimido: /content/asr_model.zip")
+
+print(f"\n{'='*60}")
+print("✅ EXPORTACIÓN COMPLETADA")
+print(f"{'='*60}")
+print(f"Directorio: {export_dir}")
+print(f"Archivo ZIP: /content/asr_model.zip")
+print(f"\nContenido:")
+for file in os.listdir(export_dir):
+    file_path = os.path.join(export_dir, file)
+    size_mb = os.path.getsize(file_path) / (1024**2)
+    print(f"   - {file} ({size_mb:.2f} MB)")
+
+print(f"\n💡 Para descargar: Haz clic en la carpeta 📁 y descarga 'asr_model.zip'")
+print(f"{'='*60}")
+
+"""
+SCRIPT DE INFERENCIA - CÓMO USAR EL MODELO ENTRENADO
+=====================================================
+
+Este código muestra cómo cargar y usar el modelo para transcribir audio nuevo.
+Copia este código en un nuevo notebook cuando quieras usar el modelo.
+"""
+
+def load_asr_model(model_dir='/content/asr_model_export'):
+    """
+    Carga el modelo ASR entrenado.
+
+    Args:
+        model_dir: Directorio con los archivos del modelo
+
+    Returns:
+        model: Modelo cargado
+        vocab: Vocabulario
+        idx_to_char: Mapeo índice -> carácter
+        config: Configuración del modelo
+    """
+    import torch
+    import torch.nn as nn
+    import json
+
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    # Cargar configuración
+    with open(f'{model_dir}/config.json', 'r') as f:
+        config = json.load(f)
+
+    # Cargar vocabulario
+    with open(f'{model_dir}/vocab.json', 'r', encoding='utf-8') as f:
+        vocab_data = json.load(f)
+        vocab = vocab_data['vocab']
+        # Convertir claves de idx_to_char a int
+        idx_to_char = {int(k): v for k, v in vocab_data['idx_to_char'].items()}
+
+    # Recrear arquitectura del modelo (copiar clase ASRCNN_BiLSTM)
+    class ASRCNN_BiLSTM(nn.Module):
+        def __init__(self, n_mels=80, hidden_size=256, vocab_size=30,
+                     num_lstm_layers=4, dropout=0.3):
+            super(ASRCNN_BiLSTM, self).__init__()
+
+            self.n_mels = n_mels
+            self.hidden_size = hidden_size
+            self.vocab_size = vocab_size
+            self.num_lstm_layers = num_lstm_layers
+
+            self.conv1 = nn.Conv2d(1, 32, kernel_size=3, stride=1, padding=1)
+            self.bn1 = nn.BatchNorm2d(32)
+
+            self.conv2 = nn.Conv2d(32, 64, kernel_size=3, stride=1, padding=1)
+            self.bn2 = nn.BatchNorm2d(64)
+
+            self.relu = nn.ReLU()
+            self.dropout_cnn = nn.Dropout(dropout)
+
+            self.cnn_output_dim = 64 * (n_mels // 4 if n_mels // 4 > 0 else 1)
+
+            self.lstm = nn.LSTM(
+                input_size=self.cnn_output_dim,
+                hidden_size=hidden_size,
+                num_layers=num_lstm_layers,
+                batch_first=True,
+                bidirectional=True,
+                dropout=dropout if num_lstm_layers > 1 else 0
+            )
+
+            self.fc = nn.Linear(hidden_size * 2, vocab_size)
+            self.log_softmax = nn.LogSoftmax(dim=2)
+
+        def forward(self, x, input_lengths):
+            batch_size = x.size(0)
+            x = x.unsqueeze(1)
+
+            x = self.relu(self.bn1(self.conv1(x)))
+            x = nn.functional.max_pool2d(x, kernel_size=2, stride=2)
+            x = self.dropout_cnn(x)
+
+            x = self.relu(self.bn2(self.conv2(x)))
+            x = nn.functional.max_pool2d(x, kernel_size=2, stride=2)
+            x = self.dropout_cnn(x)
+
+            batch, channels, freq, time = x.size()
+            x = x.permute(0, 3, 1, 2)
+            x = x.reshape(batch, time, channels * freq)
+
+            output_lengths = (input_lengths / (2 ** 2)).long()
+
+            x = nn.utils.rnn.pack_padded_sequence(
+                x, output_lengths.cpu(), batch_first=True, enforce_sorted=False
+            )
+
+            x, _ = self.lstm(x)
+            x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
+
+            x = self.fc(x)
+            log_probs = self.log_softmax(x)
+
+            return log_probs, output_lengths
+
+    # Crear modelo
+    model = ASRCNN_BiLSTM(
+        n_mels=config['n_mels'],
+        hidden_size=config['hidden_size'],
+        vocab_size=config['vocab_size'],
+        num_lstm_layers=config['num_lstm_layers'],
+        dropout=config['dropout']
+    ).to(device)
+
+    # Cargar pesos
+    checkpoint = torch.load(f'{model_dir}/model.pth', map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.eval()
+
+    print(f"✅ Modelo cargado desde {model_dir}")
+    print(f"   CER: {config['best_cer']:.2f}%")
+    print(f"   Vocabulario: {config['vocab_size']} caracteres")
+
+    return model, vocab, idx_to_char, config
+
+
+def analyze_transcription_quality(transcription):
+    """
+    Analiza la calidad de una transcripción sin necesidad de referencia.
+
+    Args:
+        transcription: Texto transcrito
+
+    Returns:
+        quality_score: Puntuación de calidad (0-100)
+        issues: Lista de problemas detectados
+    """
+    issues = []
+    score = 100.0
+
+    if len(transcription) == 0:
+        return 0.0, ["Transcripción vacía"]
+
+    # 1. Detectar palabras muy cortas o fragmentadas
+    words = transcription.split()
+    if len(words) == 0:
+        issues.append("No se detectaron palabras")
+        score -= 50
+    else:
+        avg_word_length = sum(len(w) for w in words) / len(words)
+        if avg_word_length < 2.5:
+            issues.append(f"Palabras muy cortas (promedio: {avg_word_length:.1f} caracteres)")
+            score -= 20
+
+        # Detectar muchas palabras de 1-2 letras
+        short_words = sum(1 for w in words if len(w) <= 2)
+        if short_words / len(words) > 0.4:
+            issues.append(f"Demasiadas palabras cortas ({short_words}/{len(words)})")
+            score -= 15
+
+    # 2. Detectar caracteres repetidos anormalmente
+    repeated_chars = 0
+    for i in range(len(transcription) - 2):
+        if transcription[i] == transcription[i+1] == transcription[i+2]:
+            repeated_chars += 1
+
+    if repeated_chars > 0:
+        issues.append(f"Caracteres repetidos inusualmente ({repeated_chars} veces)")
+        score -= min(20, repeated_chars * 5)
+
+    # 3. Detectar proporción de espacios
+    if len(transcription) > 0:
+        space_ratio = transcription.count(' ') / len(transcription)
+        if space_ratio > 0.3:
+            issues.append(f"Demasiados espacios ({space_ratio*100:.1f}%)")
+            score -= 15
+        elif space_ratio < 0.1 and len(words) > 1:
+            issues.append(f"Muy pocos espacios ({space_ratio*100:.1f}%)")
+            score -= 10
+
+    # 4. Detectar secuencias sin vocales (probable error)
+    vowels = 'aeiouáéíóú'
+    long_consonant_sequences = 0
+    current_consonants = 0
+
+    for char in transcription.lower():
+        if char.isalpha():
+            if char in vowels:
+                current_consonants = 0
+            else:
+                current_consonants += 1
+                if current_consonants >= 5:
+                    long_consonant_sequences += 1
+                    current_consonants = 0
+
+    if long_consonant_sequences > 0:
+        issues.append(f"Secuencias largas sin vocales ({long_consonant_sequences})")
+        score -= min(15, long_consonant_sequences * 5)
+
+    # 5. Detectar longitud anormal
+    if len(transcription) < 10:
+        issues.append("Transcripción muy corta")
+        score -= 10
+
+    score = max(0, min(100, score))
+
+    if not issues:
+        issues.append("No se detectaron problemas evidentes")
+
+    return score, issues
+
+
+def transcribe_audio(audio_path, model, idx_to_char, config):
+    """
+    Transcribe un archivo de audio.
+
+    Args:
+        audio_path: Ruta al archivo de audio
+        model: Modelo cargado
+        idx_to_char: Mapeo índice -> carácter
+        config: Configuración del modelo
+
+    Returns:
+        transcription: Texto transcrito
+        confidence: Confianza promedio de la predicción
+    """
+    import librosa
+    import torch
+    import numpy as np
+
+    device = next(model.parameters()).device
+
+    # Cargar audio
+    audio, _ = librosa.load(audio_path, sr=config['sample_rate'], mono=True)
+
+    # Convertir a espectrograma Mel
+    mel_spec = librosa.feature.melspectrogram(
+        y=audio,
+        sr=config['sample_rate'],
+        n_mels=config['n_mels'],
+        n_fft=config['n_fft'],
+        hop_length=config['hop_length'],
+        win_length=config['win_length'],
+        window='hamming',
+        center=True,
+        pad_mode='reflect'
+    )
+
+    mel_spec_db = librosa.power_to_db(mel_spec, ref=np.max)
+
+    # Convertir a tensor
+    mel_tensor = torch.FloatTensor(mel_spec_db).unsqueeze(0).to(device)  # (1, n_mels, time)
+    mel_length = torch.LongTensor([mel_tensor.size(2)]).to(device)
+
+    # Inferencia
+    with torch.no_grad():
+        log_probs, output_lengths = model(mel_tensor, mel_length)
+
+    # Decodificar (greedy) y calcular confianza
+    probs = torch.exp(log_probs[0])  # Convertir log_probs a probabilidades
+    max_probs, indices = torch.max(probs, dim=1)  # (time,)
+
+    decoded_chars = []
+    confidences = []
+    prev_idx = None
+    blank_idx = 0
+
+    for idx, conf in zip(indices.cpu().numpy(), max_probs.cpu().numpy()):
+        if idx != prev_idx and idx != blank_idx:
+            decoded_chars.append(idx_to_char[idx])
+            confidences.append(float(conf))
+        prev_idx = idx
+
+    transcription = ''.join(decoded_chars)
+    avg_confidence = sum(confidences) / len(confidences) if confidences else 0.0
+
+    return transcription, avg_confidence
+
+
+# ===== EJEMPLO DE USO =====
+print("="*60)
+print("🎤 EJEMPLO DE INFERENCIA")
+print("="*60)
+
+# Cargar modelo
+model_loaded, vocab_loaded, idx_to_char_loaded, config_loaded = load_asr_model()
+
+# Probar con un audio del test set
+if 'df_test' in locals() and len(df_test) > 0:
+    test_audio_path = df_test.iloc[0]['audio_path']
+    test_reference = df_test.iloc[0]['normalized_text']
+
+    print(f"\n🔊 Transcribiendo: {os.path.basename(test_audio_path)}")
+
+    transcription, confidence = transcribe_audio(test_audio_path, model_loaded, idx_to_char_loaded, config_loaded)
+
+    print(f"\n📝 Resultado:")
+    print(f"   Referencia:  '{test_reference}'")
+    print(f"   Predicción:  '{transcription}'")
+
+    # Calcular CER
+    try:
+        from jiwer import cer
+        cer_score = cer([test_reference], [transcription])
+        print(f"   CER: {cer_score*100:.2f}%")
+        print(f"   Confianza: {confidence*100:.1f}%")
+    except:
+        pass
+
+    print(f"\n✅ Inferencia completada")
+
+else:
+    print("\n⚠️ No hay datos de test disponibles")
+    print("   Proporciona una ruta de audio para probar:")
+    print("   transcription, confidence = transcribe_audio('path/to/audio.wav', model_loaded, idx_to_char_loaded, config_loaded)")
+
+print("="*60)
+
+from google.colab import files
+import IPython.display as ipd
+
+print("="*60)
+print("🎙️ PRUEBA CON TU PROPIO AUDIO")
+print("="*60)
+
+print("\n📁 Opciones para cargar audio:")
+print("   1. Subir archivo desde tu computadora")
+print("   2. Usar un audio del dataset de prueba")
+
+# Opción 1: Subir archivo
+print("\n" + "="*60)
+print("OPCIÓN 1: SUBIR ARCHIVO DE AUDIO")
+print("="*60)
+print("\n💡 Formatos soportados: .wav, .mp3, .flac, .ogg")
+print("   Haz clic en 'Choose Files' para subir tu audio:")
+
+uploaded = files.upload()
+
+if uploaded:
+    # Procesar el primer archivo subido
+    uploaded_filename = list(uploaded.keys())[0]
+    uploaded_path = f'/content/{uploaded_filename}'
+
+    print(f"\n✅ Archivo subido: {uploaded_filename}")
+    print(f"   Tamaño: {len(uploaded[uploaded_filename]) / 1024:.2f} KB")
+
+    # Reproducir audio
+    print(f"\n🔊 Reproduciendo audio:")
+    display(ipd.Audio(uploaded_path))
+
+    # Transcribir
+    print(f"\n🤖 Transcribiendo...")
+    try:
+        # Verificar que el modelo esté cargado
+        if 'model_loaded' not in locals():
+            print("   Cargando modelo...")
+            model_loaded, vocab_loaded, idx_to_char_loaded, config_loaded = load_asr_model()
+
+        transcription, confidence = transcribe_audio(uploaded_path, model_loaded, idx_to_char_loaded, config_loaded)
+
+        print(f"\n{'='*60}")
+        print("📝 TRANSCRIPCIÓN GENERADA:")
+        print(f"{'='*60}")
+        print(f"\n{transcription}\n")
+        print(f"{'='*60}")
+        print(f"Longitud: {len(transcription)} caracteres")
+        print(f"Palabras: {len(transcription.split())}")
+
+        # Analizar calidad de la transcripción
+        print(f"\n🔍 ANÁLISIS DE CALIDAD DE LA TRANSCRIPCIÓN:")
+        print(f"{'='*60}")
+
+        quality_score, issues = analyze_transcription_quality(transcription)
+
+        print(f"   Confianza del modelo: {confidence*100:.1f}%")
+        print(f"   Puntuación de calidad: {quality_score:.1f}/100")
+
+        if quality_score >= 80:
+            quality_label = "✅ ALTA"
+        elif quality_score >= 60:
+            quality_label = "⚠️ MEDIA"
+        else:
+            quality_label = "❌ BAJA"
+
+        print(f"   Calidad estimada: {quality_label}")
+
+        if issues:
+            print(f"\n   Observaciones:")
+            for issue in issues:
+                print(f"   • {issue}")
+
+        print(f"\n💡 NOTA:")
+        print(f"   Para calcular la precisión REAL de esta transcripción,")
+        print(f"   necesitas comparar con la transcripción correcta del audio.")
+        print(f"   Estas métricas son solo estimaciones de confianza.")
+
+        print(f"{'='*60}")
+
+    except Exception as e:
+        print(f"\n❌ Error durante la transcripción: {e}")
+        import traceback
+        traceback.print_exc()
+
+else:
+    print("\n⚠️ No se subió ningún archivo")
+
+print("\n" + "="*60)
+
+print("="*60)
+print("OPCIÓN 2: PROBAR CON AUDIOS DEL DATASET")
+print("="*60)
+
+# Seleccionar algunos audios del test set para prueba
+if 'df_test' in locals() and len(df_test) > 0:
+    print(f"\n📊 Audios disponibles del test set: {len(df_test)}")
+    print("\n🎯 Seleccionando 5 audios aleatorios para probar...\n")
+
+    # Verificar que el modelo esté cargado
+    if 'model_loaded' not in locals():
+        print("Cargando modelo...")
+        model_loaded, vocab_loaded, idx_to_char_loaded, config_loaded = load_asr_model()
+
+    # Seleccionar 5 muestras aleatorias
+    import random
+    random.seed(42)
+    sample_indices = random.sample(range(len(df_test)), min(5, len(df_test)))
+
+    for i, idx in enumerate(sample_indices, 1):
+        audio_path = df_test.iloc[idx]['audio_path']
+        reference = df_test.iloc[idx]['normalized_text']
+        source = df_test.iloc[idx]['source']
+
+        print(f"{'='*60}")
+        print(f"🎵 AUDIO {i}/5")
+        print(f"{'='*60}")
+        print(f"Archivo: {os.path.basename(audio_path)}")
+        print(f"Dataset: {source}")
+
+        # Reproducir audio
+        try:
+            print(f"\n🔊 Reproducir audio:")
+            display(ipd.Audio(audio_path))
+        except:
+            print(f"   ⚠️ No se pudo reproducir el audio")
+
+        # Transcribir
+        print(f"\n🤖 Transcribiendo...")
+        try:
+            transcription = transcribe_audio(audio_path, model_loaded, idx_to_char_loaded, config_loaded)
+
+            print(f"\n📝 Resultado:")
+            print(f"   Referencia:  '{reference}'")
+            print(f"   Predicción:  '{transcription}'")
+
+            # Calcular CER
+            try:
+                from jiwer import cer as calculate_cer
+                cer_score = calculate_cer([reference], [transcription]) if len(reference) > 0 else 0
+
+                # Colorear según calidad
+                if cer_score < 0.05:
+                    quality = "⭐⭐⭐ EXCELENTE"
+                elif cer_score < 0.10:
+                    quality = "⭐⭐ MUY BUENO"
+                elif cer_score < 0.15:
+                    quality = "⭐ BUENO"
+                else:
+                    quality = "⚠️ REGULAR"
+
+                print(f"   CER: {cer_score*100:.2f}% - {quality}")
+            except Exception as e:
+                print(f"   CER: No calculado")
+
+            print()
+
+        except Exception as e:
+            print(f"   ❌ Error: {e}")
+            print()
+
+    print(f"{'='*60}")
+    print("✅ PRUEBAS COMPLETADAS")
+    print(f"{'='*60}")
+
+else:
+    print("\n⚠️ No hay datos de test disponibles")
+    print("   Ejecuta primero las celdas de preparación de datos")
+
+print("\n" + "="*60)
+
+
+
+def transcribe_quick(audio_path, show_audio=True):
+    """
+    Función rápida para transcribir un archivo de audio.
+
+    Args:
+        audio_path: Ruta al archivo de audio
+        show_audio: Si mostrar el reproductor de audio
+
+    Returns:
+        transcription: Texto transcrito
+    """
+    import IPython.display as ipd
+
+    # Verificar que el modelo esté cargado
+    if 'model_loaded' not in globals():
+        print("⏳ Cargando modelo...")
+        globals()['model_loaded'], globals()['vocab_loaded'], \
+        globals()['idx_to_char_loaded'], globals()['config_loaded'] = load_asr_model()
+        print("✅ Modelo cargado\n")
+
+    print(f"{'='*60}")
+    print(f"🎤 TRANSCRIBIENDO: {os.path.basename(audio_path)}")
+    print(f"{'='*60}\n")
+
+    # Mostrar reproductor
+    if show_audio:
+        print("🔊 Audio:")
+        display(ipd.Audio(audio_path))
+        print()
+
+    # Transcribir
+    print("🤖 Procesando...")
+    try:
+        transcription, confidence = transcribe_audio(
+            audio_path,
+            globals()['model_loaded'],
+            globals()['idx_to_char_loaded'],
+            globals()['config_loaded']
+        )
+
+        print(f"\n{'='*60}")
+        print("📝 TRANSCRIPCIÓN:")
+        print(f"{'='*60}")
+        print(f"\n{transcription}\n")
+        print(f"{'='*60}")
+        print(f"Caracteres: {len(transcription)}")
+        print(f"Palabras: {len(transcription.split())}")
+
+        # Analizar calidad
+        print(f"\n🔍 ANÁLISIS DE CALIDAD:")
+        print(f"{'='*60}")
+
+        quality_score, issues = analyze_transcription_quality(transcription)
+
+        print(f"   Confianza: {confidence*100:.1f}%")
+        print(f"   Calidad: {quality_score:.1f}/100")
+
+        if issues and issues[0] != "No se detectaron problemas evidentes":
+            print(f"   Observaciones:")
+            for issue in issues[:3]:  # Mostrar máximo 3
+                print(f"   • {issue}")
+
+        print(f"{'='*60}\n")
+
+        return transcription
+
+    except Exception as e:
+        print(f"\n❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+print("✅ Función 'transcribe_quick()' lista para usar")
+print("\n💡 Uso:")
+print("   transcribe_quick('/ruta/al/audio.wav')")
+print("\n📝 Ejemplo:")
+print("   # Transcribir tu audio")
+print("   transcription = transcribe_quick('mi_audio.wav')")
+print("\n   # O usar sin mostrar el reproductor")
+print("   transcription = transcribe_quick('mi_audio.wav', show_audio=False)")
