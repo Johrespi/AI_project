@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenv
+.venv/
+venv/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Model artifacts (do not commit)
+*.pth
+*.pt
+*.ckpt
+*.onnx
+checkpoints/
+asr_model_export/
+models/
+
+# Data
+*.wav
+*.mp3
+*.flac
+*.ogg

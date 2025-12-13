@@ -1,0 +1,19 @@
+[project]
+name = "asr-tkinter-gui"
+version = "0.1.0"
+description = "Minimal Tkinter GUI for Spanish ASR"
+readme = ""
+requires-python = ">=3.10"
+dependencies = [
+  "torch",
+  "librosa",
+  "soundfile",
+  "numpy",
+]
+
+[project.scripts]
+asr-gui = "app:main"
+
+[tool.uv]
+# uv will manage the virtual environment and lockfile.
+
