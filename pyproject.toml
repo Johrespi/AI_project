@@ -8,7 +8,7 @@ dependencies = [
   "torch",
   "librosa",
   "soundfile",
-  "simpleaudio",
+  "pygame>=2.5",
   "numpy",
 ]
 
