@@ -1,14 +1,24 @@
-# ASR Tkinter GUI (WSL)
+# ASR Tkinter GUI
 
 Interfaz gráfica minimalista (blanco/negro) para transcribir audio **.wav** usando el checkpoint `best_model.pth`.
 
 ## Requisitos
 
-- WSL2 en Windows 10 + un X Server (por ejemplo VcXsrv)
 - Python 3.10+
 - `uv`
 
-## Instalación (con uv)
+## Instalación de uv
+
+- Windows (PowerShell): `irm https://astral.sh/uv/install.ps1 | iex`
+- Linux/macOS: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+
+Reabre la terminal y verifica con:
+
+```bash
+uv --version
+```
+
+## Instalación del proyecto (con uv)
 
 ```bash
 uv venv
@@ -16,21 +26,6 @@ uv sync
 ```
 
 ## Ejecutar
-
-### 1) Arranca tu X server en Windows
-
-Ejemplo (VcXsrv): ejecutar `XLaunch` y habilitar *Disable access control*.
-
-### 2) Configura DISPLAY en WSL
-
-En la misma terminal donde vas a ejecutar la app:
-
-```bash
-export DISPLAY=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}'):0
-export LIBGL_ALWAYS_INDIRECT=1
-```
-
-### 3) Ejecuta la app
 
 ```bash
 uv run python app.py
@@ -49,3 +44,4 @@ Coloca el checkpoint en la raíz del proyecto.
 
 - Solo soporta `.wav`.
 - El modelo se carga al iniciar la app y la transcripción corre en un thread para no congelar la UI.
+- En Linux necesitas tener instalado Tkinter (paquete del sistema `python3-tk`).
