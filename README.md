@@ -43,6 +43,7 @@ Coloca el checkpoint en la raíz del proyecto.
 ## Notas
 
 - Solo soporta `.wav`.
+- El audio se reproduce con `pygame` (pausa/reanuda y suele ser más estable en Windows).
 - El modelo se carga al iniciar la app y la transcripción corre en un thread para no congelar la UI.
 - En Linux necesitas tener instalado Tkinter (paquete del sistema `python3-tk`).
 - En Windows, Tkinter viene incluido normalmente con Python (python.org). Si no abre la ventana, revisa que tu instalación incluya Tcl/Tk.
