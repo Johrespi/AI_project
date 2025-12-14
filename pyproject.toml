@@ -10,6 +10,9 @@ dependencies = [
   "soundfile",
   "pygame>=2.5",
   "numpy",
+  "sounddevice",
+  "scipy",
+  "pydub",
 ]
 
 [project.scripts]

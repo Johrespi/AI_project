@@ -4,6 +4,8 @@ Proyecto académico para la materia **Inteligencia Artificial** en **ESPOL**.
 
 Interfaz gráfica minimalista (blanco/negro) para transcribir audio **.wav** usando el checkpoint `best_model.pth`.
 
+Incluye función para **grabar audio desde la interfaz** y transcribirlo directamente.
+
 ## Requisitos
 
 - Python 3.10+
@@ -20,12 +22,17 @@ Reabre la terminal y verifica con:
 uv --version
 ```
 
+
 ## Instalación del proyecto (con uv)
 
 ```bash
 uv venv
+uv pip install sounddevice scipy
 uv sync
 ```
+
+> **Nota:** Si tienes problemas con `uv sync` o `uv pip` en VS Code, ejecuta los comandos anteriores directamente desde PowerShell fuera de VS Code.
+
 
 ## Ejecutar
 
@@ -41,6 +48,12 @@ Por defecto la app intenta cargar (en este orden):
 - `checkpoint_epoch_40.pth`
 
 Coloca el checkpoint en la raíz del proyecto.
+
+## Grabación de audio desde la interfaz
+
+- Haz clic en **🎤 Grabar** para iniciar la grabación desde el micrófono.
+- Haz clic en **⏹ Detener** para finalizar y cargar el audio grabado.
+- El archivo grabado se puede reproducir y transcribir igual que un archivo `.wav` cargado manualmente.
 
 ## Notas
 
