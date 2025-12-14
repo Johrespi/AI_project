@@ -54,23 +54,21 @@ class AudioPlayer:
                             audio = AudioSegment.from_file(str(path))
                             audio.export(tmp_wav.name, format="wav")
                             tmp_wav_path = tmp_wav.name
-                        pygame.mixer.music.load(tmp_wav_path)
-                        self._sample_rate = sample_rate
-                        self._channels = channels
-                        self._state = "paused"
-                        self._paused_by_user = False
-                        self._started_once = False
-                        # Guardar la ruta temporal para borrarla después si es necesario
-                        self._temp_wav_path = tmp_wav_path
+                        try:
+                            pygame.mixer.music.load(tmp_wav_path)
+                            self._sample_rate = sample_rate
+                            self._channels = channels
+                            self._state = "paused"
+                            self._paused_by_user = False
+                            self._started_once = False
+                        finally:
+                            if os.path.exists(tmp_wav_path):
+                                os.remove(tmp_wav_path)
                     except Exception as conv_exc:
                         raise RuntimeError(f"No se pudo convertir/reproducir el archivo OGG: {conv_exc}") from e
                 else:
                     raise e
         except Exception:
-            # Limpiar archivo temporal si existe
-            if hasattr(self, '_temp_wav_path') and os.path.exists(self._temp_wav_path):
-                os.remove(self._temp_wav_path)
-                del self._temp_wav_path
             raise
     def cleanup(self):
         import os
