@@ -23,27 +23,64 @@ class AudioPlayer:
 
     def load(self, path: str | Path) -> None:
         import soundfile as sf
-
-        path = Path(path)
-
-        with sf.SoundFile(str(path)) as f:
-            if f.frames <= 0:
-                raise ValueError("Audio vacío")
-            sample_rate = int(f.samplerate)
-            channels = int(f.channels)
-
-        self._loaded_path = path
-        self._ensure_mixer(sample_rate=sample_rate, channels=channels)
-
         import pygame
+        from pathlib import Path
+        import tempfile
+        import os
+        try:
+            path = Path(path)
+            with sf.SoundFile(str(path)) as f:
+                if f.frames <= 0:
+                    raise ValueError("Audio vacío")
+                sample_rate = int(f.samplerate)
+                channels = int(f.channels)
 
-        pygame.mixer.music.load(str(path))
-        self._sample_rate = sample_rate
-        self._channels = channels
-        self._state = "paused"
-        self._paused_by_user = False
-        self._started_once = False
+            self._loaded_path = path
+            self._ensure_mixer(sample_rate=sample_rate, channels=channels)
 
+            try:
+                pygame.mixer.music.load(str(path))
+                self._sample_rate = sample_rate
+                self._channels = channels
+                self._state = "paused"
+                self._paused_by_user = False
+                self._started_once = False
+            except Exception as e:
+                # Si es un ogg y falla, intenta convertir a wav temporalmente
+                if path.suffix.lower() == ".ogg":
+                    try:
+                        from pydub import AudioSegment
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp_wav:
+                            audio = AudioSegment.from_file(str(path))
+                            audio.export(tmp_wav.name, format="wav")
+                            tmp_wav_path = tmp_wav.name
+                        try:
+                            pygame.mixer.music.load(tmp_wav_path)
+                            self._sample_rate = sample_rate
+                            self._channels = channels
+                            self._state = "paused"
+                            self._paused_by_user = False
+                            self._started_once = False
+                        finally:
+                            if os.path.exists(tmp_wav_path):
+                                os.remove(tmp_wav_path)
+                    except Exception as conv_exc:
+                        raise RuntimeError(f"No se pudo convertir/reproducir el archivo OGG: {conv_exc}") from e
+                else:
+                    raise e
+        except Exception:
+            raise
+    def cleanup(self):
+        import os
+        if hasattr(self, '_temp_wav_path') and os.path.exists(self._temp_wav_path):
+            os.remove(self._temp_wav_path)
+            del self._temp_wav_path
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
     def toggle_play_pause(self) -> None:
         if self._loaded_path is None:
             return
