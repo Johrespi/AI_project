@@ -72,12 +72,17 @@ class AudioPlayer:
                 os.remove(self._temp_wav_path)
                 del self._temp_wav_path
             raise
-    def __del__(self):
+    def cleanup(self):
         import os
         if hasattr(self, '_temp_wav_path') and os.path.exists(self._temp_wav_path):
             os.remove(self._temp_wav_path)
             del self._temp_wav_path
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.cleanup()
     def toggle_play_pause(self) -> None:
         if self._loaded_path is None:
             return
