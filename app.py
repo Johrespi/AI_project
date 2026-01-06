@@ -15,16 +15,16 @@ from audio_player import AudioPlayer
 @dataclass(frozen=True)
 class Theme:
     # Windows 95 Classic
-    bg: str = "#c0c0c0"  # Gris clasico
+    bg: str = "#c0c0c0"  # Gris clásico
     fg: str = "#000000"  # Texto negro
     muted: str = "#404040"  # Texto secundario
 
     # Bordes 3D
     highlight: str = "#ffffff"  # Borde superior/izquierdo (luz)
     shadow: str = "#808080"  # Borde inferior/derecho (sombra)
-    dark_shadow: str = "#404040"  # Sombra mas oscura
+    dark_shadow: str = "#404040"  # Sombra más oscura
 
-    # Barra de titulo
+    # Barra de título
     title_bg: str = "#000080"  # Azul marino Windows 95
     title_fg: str = "#ffffff"  # Texto blanco
 
@@ -39,7 +39,7 @@ class Theme:
 
 
 class Win95Button(tk.Frame):
-    """Boton con efecto 3D estilo Windows 95."""
+    """Botón con efecto 3D estilo Windows 95."""
 
     def __init__(
         self, master: tk.Misc, theme: Theme, text: str = "", command=None, **kwargs
@@ -58,11 +58,11 @@ class Win95Button(tk.Frame):
         self._inner_frame = tk.Frame(self._outer_frame, bg=theme.dark_shadow)
         self._inner_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 2), pady=(0, 2))
 
-        # Frame del boton
+        # Frame del botón
         self._btn_frame = tk.Frame(self._inner_frame, bg=theme.btn_bg)
         self._btn_frame.pack(fill=tk.BOTH, expand=True, padx=(2, 0), pady=(2, 0))
 
-        # Label del boton
+        # Label del botón
         self._label = tk.Label(
             self._btn_frame,
             text=text,
@@ -194,20 +194,20 @@ class App:
         main_frame = tk.Frame(main_inner, bg=self.theme.bg)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=(2, 0), pady=(2, 0))
 
-        # Barra de titulo Windows 95
+        # Barra de título Windows 95
         title_bar = tk.Frame(main_frame, bg=self.theme.title_bg, height=24)
         title_bar.pack(fill=tk.X, padx=3, pady=(3, 0))
         title_bar.pack_propagate(False)
 
         title_label = tk.Label(
             title_bar,
-            text="  Transcriptor ASR (Espanol)",
+            text="Transcriptor ASR (Español)",
             bg=self.theme.title_bg,
             fg=self.theme.title_fg,
             font=("Arial", 9, "bold"),
-            anchor="w",
+            anchor="center",
         )
-        title_label.pack(side=tk.LEFT, fill=tk.Y)
+        title_label.pack(fill=tk.BOTH, expand=True)
 
         # Contenedor principal
         container = tk.Frame(main_frame, bg=self.theme.bg)
@@ -215,7 +215,7 @@ class App:
 
         subtitle = tk.Label(
             container,
-            text="Sube un archivo .wav y obten la transcripcion.",
+            text="Sube un archivo .wav y obtén la transcripción.",
             bg=self.theme.bg,
             fg=self.theme.muted,
             font=("Arial", 9),

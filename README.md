@@ -40,7 +40,7 @@ uv sync
 ## Uso
 
 ```bash
-uv run asr-gui
+uv run python app.py
 ```
 
 ## Grabación de audio desde la interfaz
