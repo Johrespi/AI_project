@@ -26,18 +26,13 @@ uv --version
 ## Instalación del proyecto (con uv)
 
 ```bash
-uv venv
-uv pip install sounddevice scipy
 uv sync
 ```
-
-> **Nota:** Si tienes problemas con `uv sync` o `uv pip` en VS Code, ejecuta los comandos anteriores directamente desde PowerShell fuera de VS Code.
-
 
 ## Ejecutar
 
 ```bash
-uv run python app.py
+uv run asr-gui
 ```
 
 ## Modelo
