@@ -2,7 +2,7 @@
 
 Proyecto académico para la materia **Inteligencia Artificial** en **ESPOL**.
 
-Interfaz gráfica minimalista (blanco/negro) para transcribir audio **.wav** usando el checkpoint `best_model.pth`.
+Interfaz gráfica estilo Windows 95 para transcribir audio **.wav** usando el checkpoint `best_model.pth`.
 
 Incluye función para **grabar audio desde la interfaz** y transcribirlo directamente.
 
@@ -22,32 +22,31 @@ Reabre la terminal y verifica con:
 uv --version
 ```
 
+## Modelo
 
-## Instalación del proyecto (con uv)
+Descarga el archivo `best_model.pth` desde [Google Drive](https://drive.google.com/drive/folders/1FE2NKyTdQzrxlJ3O9EXLB9n-1z5cBAfc) y colócalo en la raíz del proyecto.
+
+Por defecto la app intenta cargar (en este orden):
+
+1. `best_model.pth`
+2. `checkpoint_epoch_40.pth`
+
+## Instalación del proyecto
 
 ```bash
 uv sync
 ```
 
-## Ejecutar
+## Uso
 
 ```bash
 uv run asr-gui
 ```
 
-## Modelo
-
-Por defecto la app intenta cargar (en este orden):
-
-- `best_model.pth`
-- `checkpoint_epoch_40.pth`
-
-Coloca el checkpoint en la raíz del proyecto.
-
 ## Grabación de audio desde la interfaz
 
-- Haz clic en **🎤 Grabar** para iniciar la grabación desde el micrófono.
-- Haz clic en **⏹ Detener** para finalizar y cargar el audio grabado.
+- Haz clic en **Grabar** para iniciar la grabación desde el micrófono.
+- Haz clic en **Detener** para finalizar y cargar el audio grabado.
 - El archivo grabado se puede reproducir y transcribir igual que un archivo `.wav` cargado manualmente.
 
 ## Notas
