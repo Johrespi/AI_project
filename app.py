@@ -56,11 +56,11 @@ class Win95Button(tk.Frame):
 
         # Frame interior para sombra
         self._inner_frame = tk.Frame(self._outer_frame, bg=theme.dark_shadow)
-        self._inner_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 2), pady=(0, 2))
+        self._inner_frame.pack(fill=tk.BOTH, expand=True, padx=(2, 0), pady=(2, 0))
 
         # Frame del botón
         self._btn_frame = tk.Frame(self._inner_frame, bg=theme.btn_bg)
-        self._btn_frame.pack(fill=tk.BOTH, expand=True, padx=(2, 0), pady=(2, 0))
+        self._btn_frame.pack(fill=tk.BOTH, expand=True, padx=(0, 2), pady=(0, 2))
 
         # Label del botón
         self._label = tk.Label(
