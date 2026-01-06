@@ -20,4 +20,5 @@ asr-gui = "app:main"
 
 [tool.uv]
 # uv will manage the virtual environment and lockfile.
+python = "3.12"
 
