@@ -432,7 +432,7 @@ class App:
 
     def _on_transcribe_done(self, text: str, confidence: float) -> None:
         self._set_text(text if text.strip() else "(transcripción vacía)")
-        self.status_var.set(f"Hecho. Confianza aprox.: {confidence * 100:.1f}%")
+        self.status_var.set("Transcripción completada.")
         self.btn_select.configure(state=tk.NORMAL)
         self.btn_transcribe.configure(state=tk.NORMAL)
         self.btn_copy.configure(state=tk.NORMAL)
